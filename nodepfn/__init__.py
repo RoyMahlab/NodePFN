@@ -1,0 +1,1 @@
+from nodepfn.scripts.transformer_prediction_interface import NodePFNClassifier
