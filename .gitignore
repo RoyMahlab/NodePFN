@@ -1,0 +1,11 @@
+# Byte-compiled / optimized / DLL files
+.DS_Store
+*/.DS_Store
+__pycache__
+*/__pycache__
+
+# VS Code settings
+.vscode/
+
+# data
+data/
