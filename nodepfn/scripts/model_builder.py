@@ -1,11 +1,11 @@
 from functools import partial
-import encoders as encoders
+import nodepfn.encoders as encoders
 
-from transformer import TransformerModel
-from utils import get_uniform_single_eval_pos_sampler
+from nodepfn.transformer import TransformerModel
+from nodepfn.utils import get_uniform_single_eval_pos_sampler
 import torch
 import math
-import positional_encodings
+from nodepfn import positional_encodings
 
 def save_model(model, path, filename, config_sample):
     config_sample = {**config_sample}
@@ -36,7 +36,6 @@ def load_model_only_inference(path, filename, device):
     Loads a saved model from the specified position. This function only restores inference capabilities and
     cannot be used for further training.
     """
-
     model_state, optimizer_state, config_sample = torch.load(os.path.join(path, filename), map_location='cpu')
 
     if (('nan_prob_no_reason' in config_sample and config_sample['nan_prob_no_reason'] > 0.0) or

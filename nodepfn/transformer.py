@@ -6,8 +6,8 @@ import torch.nn as nn
 from torch import Tensor
 from torch.nn import Module
 
-from layer import TransformerEncoderLayer
-from utils import SeqBN, bool_mask_to_att_mask
+from nodepfn.layer import TransformerEncoderLayer
+from nodepfn.utils import SeqBN, bool_mask_to_att_mask
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 import torch_geometric.nn as pygnn
 from torch_geometric.utils import to_undirected, remove_self_loops, add_self_loops

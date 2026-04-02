@@ -2,9 +2,9 @@ import time
 import argparse
 from datetime import datetime
 
-from scripts.model_configs import *
-from scripts.transformer_prediction_interface import *
-from scripts.model_builder import get_model, save_model
+from nodepfn.scripts.model_configs import *
+from nodepfn.scripts.transformer_prediction_interface import *
+from nodepfn.scripts.model_builder import get_model, save_model
 
 # from utils import init_dist
 import os

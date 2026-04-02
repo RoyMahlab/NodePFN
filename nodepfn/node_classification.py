@@ -3,13 +3,13 @@ import random
 import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, roc_auc_score
-from scripts.transformer_prediction_interface import NodePFNClassifier
+from nodepfn.scripts.transformer_prediction_interface import NodePFNClassifier
 import time
 from torch_geometric.utils import to_undirected, remove_self_loops, add_self_loops
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from torch_geometric.nn import SimpleConv
-from dataset import load_dataset
-from data_utils import load_fixed_splits, class_rand_splits, class_rand_splits_half
+from nodepfn.dataset import load_dataset
+from nodepfn.data_utils import load_fixed_splits, class_rand_splits, class_rand_splits_half
 from sklearn.decomposition import TruncatedSVD
 import os
 

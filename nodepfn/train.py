@@ -8,13 +8,13 @@ from contextlib import nullcontext
 import torch
 from torch import nn
 
-import utils as utils
-from transformer import TransformerModel
-from utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
-import priors as priors
-import encoders as encoders
-import positional_encodings as positional_encodings
-from utils import init_dist
+import nodepfn.utils as utils
+from nodepfn.transformer import TransformerModel
+from nodepfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
+from nodepfn import priors as priors
+from nodepfn import encoders as encoders
+from nodepfn import positional_encodings as positional_encodings
+from nodepfn.utils import init_dist
 from torch.cuda.amp import autocast, GradScaler
 from torch import nn
 from tqdm import tqdm
