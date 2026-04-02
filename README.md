@@ -4,11 +4,12 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/jeongwhanchoi/NodePFN) ![Twitter Follow](https://img.shields.io/twitter/follow/jeongwhan_choi?style=social)
 
 <div>
-    <a href="https://www.jeongwhanchoi.com" target="_blank"><b>Jeongwhan Choi</b></a><sup>1*</sup>,
-    Jongwoo Kim<sup>1*</sup>, Woosung Kim<sup>1</sup>,
-    <a href="https://sites.google.com/view/noseong" target="_blank">Noseong Park</a><sup>1</sup>,
+    <a href="https://www.jeongwhanchoi.com" target="_blank">Jeongwhan Choi</a><sup>*</sup>,
+    <a href="https://kimjongwoo-cell.github.io/" target="_blank">Jongwoo Kim</a><sup>*</sup>,
+    <a href="https://scholar.google.com/citations?user=-3qk_osAAAAJ" target="_blank">Woosung Kang</a>,
+    <a href="https://sites.google.com/view/noseong" target="_blank">Noseong Park</a>,
     <div>
-    <sup>1</sup>KAIST
+    Korea Advanced Institute of Science and Technology (KAIST)
     </div>
 </div>
 </div>
