@@ -14,6 +14,13 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--model_name', type=str, default='pfn')
 parser.add_argument('--eval', action='store_true')
 parser.add_argument('--resume_epoch', type=int, default=None, help='Resume training from this epoch checkpoint')
+parser.add_argument('--prompts_file', type=str, default=None, help='Path to the prompts file')
+parser.add_argument('--hf_model', type=str, default='meta-llama/Llama-2-7b-hf')
+parser.add_argument('--prompt_cache_dir', type=str, default=None, help='Path to the cache directory')
+parser.add_argument('--prompt_dim', type=int, default=4096)
+parser.add_argument('--is_baseline', action='store_true', help='Use baseline local GNN (SimpleConv) when GPS style is enabled')
+parser.add_argument('--conv_type', type=str, help='choose gnn backbone', default='gcn')
+parser.add_argument('--use_gps_style', action='store_true', help='Enable GPS-style local GNN + global attention')
 
 args = parser.parse_args()
 
@@ -52,7 +59,7 @@ def print_models(model_string):
                 print(os.path.join(base_path, f'models_ckpts/prior_diff_real_checkpoint{model_string}_n_{i}_epoch_{e}.ckpt'))
         print()
 
-def train_function(config_sample, add_name='', resume_epoch=None):
+def train_function(config_sample, add_name='', resume_epoch=None, prompt_embeddings=None, prompt_dim=None, is_baseline=None):
     start_time = time.time()
     N_epochs_to_save = 10
     maximum_runtime = 30
@@ -89,6 +96,9 @@ def train_function(config_sample, add_name='', resume_epoch=None):
         verbose=1,
         state_dict=state_dict,
         epoch_callback=save_callback,
+        prompt_embeddings=prompt_embeddings,
+        prompt_dim=prompt_dim,
+        is_baseline=is_baseline,
         # start_epoch=start_epoch
     )
     # If get_model does not support start_epoch, user should handle in their training loop
@@ -117,6 +127,8 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
 
 if __name__ == "__main__":
     config, model_string = reload_config(longer=1)
+
+    config['is_baseline'] = args.is_baseline
 
     config['bptt_extra_samples'] = None
     config['output_multiclass_ordered_p'] = 0.
@@ -174,6 +186,28 @@ if __name__ == "__main__":
 
     config['pos_encoder'] = 'none'
 
+    config['is_baseline'] = args.is_baseline
+    config['prompt_dim'] = args.prompt_dim
+    config['conv_type'] = args.conv_type
+    config['use_gps_style'] = args.use_gps_style
+
     config_sample = evaluate_hypers(config)
 
-    model = train_function(config_sample, add_name=model_name, resume_epoch=args.resume_epoch)
+    prompt_embeddings = None
+    if args.prompts_file is not None:
+        from nodepfn.ginat.embed_text import load_or_embed_prompts
+        prompt_embeddings = load_or_embed_prompts(
+            prompts_file=args.prompts_file,
+            hf_model=args.hf_model,
+            device=torch.device(device),
+            cache_dir=args.prompt_cache_dir
+        )
+
+    model = train_function(
+        config_sample,
+        add_name=model_name,
+        resume_epoch=args.resume_epoch,
+        prompt_embeddings=prompt_embeddings,
+        prompt_dim=args.prompt_dim,
+        is_baseline=args.is_baseline
+    )

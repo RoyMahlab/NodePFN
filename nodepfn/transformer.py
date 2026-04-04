@@ -2,27 +2,41 @@ import math
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 import torch.nn as nn
 from torch import Tensor
 from torch.nn import Module
 
 from nodepfn.layer import TransformerEncoderLayer
 from nodepfn.utils import SeqBN, bool_mask_to_att_mask
+from nodepfn.ginat.message_cagcn_layer import MCAMPNN
+from nodepfn.ginat.layers import resolve_target_backbone
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 import torch_geometric.nn as pygnn
 from torch_geometric.utils import to_undirected, remove_self_loops, add_self_loops
 
+
+class GinatInjection(nn.Module):
+    def __init__(self, in_channels, out_channels, num_layers):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.proj = nn.Linear(in_channels, out_channels)
+
+    def forward(self, x):
+        return self.proj(x)
 
 class TransformerModel(nn.Module):
     def __init__(self, encoder, n_out, ninp, nhead, nhid, nlayers, dropout=0.0, style_encoder=None, y_encoder=None,
                  pos_encoder=None, decoder=None, input_normalization=False, init_method=None, pre_norm=False,
                  activation='gelu', recompute_attn=False, num_global_att_tokens=0, full_attention=False,
                  all_layers_same_init=False, efficient_eval_masking=True, k_neighbor_sampling=None,
-                 local_gnn_type='GCN', use_gps_style=True):
+                 local_gnn_type='GCN', use_gps_style=True, is_baseline=False, prompt_dim=None, conv_type='gcn'):
         super().__init__()
         self.model_type = 'GPS-Transformer'
         self.use_gps_style = use_gps_style
         self.local_gnn_type = local_gnn_type
+        self.is_baseline = is_baseline
         
         encoder_layer_creator = lambda: TransformerEncoderLayer(ninp, nhead, nhid, dropout, activation=activation,
                                                                 pre_norm=pre_norm, recompute_attn=recompute_attn,
@@ -46,11 +60,24 @@ class TransformerModel(nn.Module):
 
         self.n_out = n_out
         self.nhid = nhid
-        
-        if not use_gps_style:
-            self.local_model = pygnn.SimpleConv(aggr='sum')
+        if use_gps_style:
+            if self.is_baseline:
+                self.local_model = pygnn.SimpleConv(aggr='sum')
+            else:
+                self.local_model = MCAMPNN(
+                    conv_cls=resolve_target_backbone(conv_type, False),
+                    node_features_channels=100,
+                    extra_features_channels=4096,
+                    out_channels=100,
+                    hidden_channels=512,
+                    num_layers=2,
+                    attn_heads=4
+                )
         else:
             self.local_model = None 
+
+        self.prompt_dim = prompt_dim
+        self.prompt_proj = nn.Linear(prompt_dim, ninp) if prompt_dim is not None else None
 
         self.init_weights()
 
@@ -60,6 +87,8 @@ class TransformerModel(nn.Module):
         self.__dict__.setdefault('k_neighbor_sampling', None)
         self.__dict__.setdefault('use_gps_style', True)
         self.__dict__.setdefault('local_gnn_type', 'GCN')
+        self.__dict__.setdefault('is_baseline', True)
+        self.__dict__.setdefault('prompt_dim', None)
 
     @staticmethod
     def generate_square_subsequent_mask(sz):
@@ -119,42 +148,62 @@ class TransformerModel(nn.Module):
         if len(src) == 2: # (x,y) and no style
             src = (None,) + src
 
-        style_src, x_src, y_src, edge_index = src
+        if len(src) == 4:
+            style_src, x_src, y_src, edge_index = src
+            prompt_src = None
+        elif len(src) == 5:
+            style_src, x_src, y_src, edge_index, prompt_src = src
+        else:
+            raise ValueError(f'Unexpected src tuple length: {len(src)}')
+        edge_index = to_undirected(edge_index)
+        edge_index, _ = remove_self_loops(edge_index)
+        edge_index, _ = add_self_loops(edge_index, num_nodes= x_src.shape[0])
         # TODO: remove this hack and use the propagated x features properly
         if len(edge_index) == 0:
             pass
         else:
-            if not self.use_gps_style and self.local_model is not None:
-                edge_index = to_undirected(edge_index)
-                edge_index, _ = remove_self_loops(edge_index)
-                edge_index, _ = add_self_loops(edge_index, num_nodes= x_src.shape[0])
-                edge_index_norm, edge_weight_norm = gcn_norm(
-                    edge_index, None, x_src.size(0),
-                    improved=False, add_self_loops=True, flow='source_to_target', dtype=x_src.dtype
-                )
-                edge_index_norm, edge_weight_norm = edge_index_norm.to(x_src.device), edge_weight_norm.to(x_src.device)
-                # FIXME: gtest version
-                x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
-                x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
-                x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
-                x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
-                ###
+            if self.use_gps_style and self.local_model is not None:
+                if isinstance(self.local_model, MCAMPNN):
+                    edge_index = edge_index.to(x_src.device)
+                    if prompt_src is not None:
+                        from torch_geometric.data import Data
+                        prompt_features, prompt_mask = prompt_src
+                        prompt_features = prompt_features.to(x_src.device)
+                        prompt_mask = prompt_mask.to(x_src.device)
+                        if x_src.dim() == 3:
+                            batch_outputs = []
+                            for b in range(x_src.shape[1]):
+                                graph = Data(x=x_src[:, b, :], edge_index=edge_index)
+                                batch_prompt = (prompt_features[b:b+1], prompt_mask[b:b+1])
+                                batch_outputs.append(self.local_model(graph, extra_features=batch_prompt))
+                            x_src = torch.stack(batch_outputs, dim=1)
+                        else:
+                            graph = Data(x=x_src, edge_index=edge_index)
+                            x_src = self.local_model(graph, extra_features=(prompt_features, prompt_mask))
+                else:
+                    edge_index_norm, edge_weight_norm = gcn_norm(
+                        edge_index, None, x_src.size(0),
+                        improved=False, add_self_loops=True, flow='source_to_target', dtype=x_src.dtype
+                    )
+                    edge_index_norm, edge_weight_norm = edge_index_norm.to(x_src.device), edge_weight_norm.to(x_src.device)
+                    x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
+                    x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
+                    x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
+                    x_src = self.local_model.propagate(edge_index_norm, x=x_src.transpose(0,1), edge_weight=edge_weight_norm).transpose(0,1)
             else:
-                edge_index = to_undirected(edge_index)
-                edge_index, _ = remove_self_loops(edge_index)
-                edge_index, _ = add_self_loops(edge_index, num_nodes= x_src.shape[0])
                 edge_index = edge_index.to(x_src.device)
-        """
-        Placeholder for new architectures...
-        
-        """
         x_src = self.encoder(x_src)
         y_src = self.y_encoder(y_src.unsqueeze(-1) if len(y_src.shape) < len(x_src.shape) else y_src)
-        style_src = self.style_encoder(style_src).unsqueeze(0) if self.style_encoder else \
-            torch.tensor([], device=x_src.device)
-        global_src = torch.tensor([], device=x_src.device) if self.global_att_embeddings is None else \
-            self.global_att_embeddings.weight.unsqueeze(1).repeat(1, x_src.shape[1], 1)
 
+        if self.style_encoder:
+            style_src = self.style_encoder(style_src).unsqueeze(0)
+        else:
+            style_src = torch.zeros((0, x_src.shape[1], x_src.shape[2]), device=x_src.device, dtype=x_src.dtype)
+
+        if self.global_att_embeddings is None:
+            global_src = torch.zeros((0, x_src.shape[1], x_src.shape[2]), device=x_src.device, dtype=x_src.dtype)
+        else:
+            global_src = self.global_att_embeddings.weight.unsqueeze(1).repeat(1, x_src.shape[1], 1)
         if src_mask is not None: assert self.global_att_embeddings is None or isinstance(src_mask, tuple)
         if src_mask is None:
             if self.global_att_embeddings is None:
@@ -172,6 +221,12 @@ class TransformerModel(nn.Module):
                 src_mask = (self.generate_global_att_globaltokens_matrix(*src_mask_args).to(x_src.device),
                             self.generate_global_att_trainset_matrix(*src_mask_args).to(x_src.device),
                             self.generate_global_att_query_matrix(*src_mask_args).to(x_src.device))
+
+        if y_src.shape[-1] != x_src.shape[-1]:
+            if y_src.shape[-1] < x_src.shape[-1]:
+                y_src = F.pad(y_src, (0, x_src.shape[-1] - y_src.shape[-1]))
+            else:
+                y_src = y_src[..., :x_src.shape[-1]]
 
         context_x = x_src[:single_eval_pos] + y_src[:single_eval_pos]
         query_x = x_src[single_eval_pos:]

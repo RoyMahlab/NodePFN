@@ -34,7 +34,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
           y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
           load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
           aggregate_k_gradients=1, verbose=True, style_encoder_generator=None, epoch_callback=None,
-          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, **model_extra_args
+          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True,
+          prompt_embeddings=None, **model_extra_args
           ):
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
@@ -47,6 +48,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             return single_eval_pos, single_eval_pos + bptt_extra_samples
         else:
             return single_eval_pos, bptt
+    if prompt_embeddings is not None:
+        extra_prior_kwargs_dict = {**extra_prior_kwargs_dict, 'prompt_embeddings': prompt_embeddings}
     dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
 
     encoder = encoder_generator(dl.num_features, emsize)
@@ -60,7 +63,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         n_out = criterion.weight.shape[0]
     else:
         n_out = 1
-
+    
     model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
                              y_encoder=y_encoder_generator(1, emsize), input_normalization=input_normalization,
                              pos_encoder=(pos_encoder_generator or positional_encodings.NoPositionalEncoding)(emsize, bptt*2),

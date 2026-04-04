@@ -67,7 +67,10 @@ def load_model_only_inference(path, filename, device):
                              dropout=config_sample['dropout'],
                              efficient_eval_masking=config_sample['efficient_eval_masking'],
                              pos_encoder=pos_encoder_generator,
-                             local_gnn_type='GCN', use_gps_style=True)
+                             local_gnn_type='GCN', use_gps_style=config_sample.get('use_gps_style', True),
+                             is_baseline=config_sample.get('is_baseline', False),
+                             conv_type=config_sample.get('conv_type', 'gcn'),
+                             prompt_dim=config_sample.get('prompt_dim'))
 
     model.criterion = loss
     module_prefix = 'module.'
@@ -107,7 +110,14 @@ def load_model(path, filename, device, eval_positions, verbose):
 
     #print('Memory', str(get_gpu_memory()))
 
-    model = get_model(config_sample, device=device, should_train=False, verbose=verbose)
+    model = get_model(
+        config_sample,
+        device=device,
+        should_train=False,
+        verbose=verbose,
+        prompt_dim=config_sample.get('prompt_dim'),
+        is_baseline=config_sample.get('is_baseline', False)
+    )
     module_prefix = 'module.'
     model_state = {k.replace(module_prefix, ''): v for k, v in model_state.items()}
     model[2].load_state_dict(model_state)
@@ -141,7 +151,7 @@ def get_default_spec(test_datasets, valid_datasets):
     return bptt, eval_positions, max_features, max_splits
 
 def get_mlp_prior_hyperparameters(config):
-    from priors.utils import gamma_sampler_f
+    from nodepfn.priors.utils import gamma_sampler_f
     config = {hp: (list(config[hp].values())[0]) if type(config[hp]) is dict else config[hp] for hp in config}
 
     if 'random_feature_rotation' not in config:
@@ -186,9 +196,10 @@ def get_meta_gp_prior_hyperparameters(config):
     return config
 
 
-def get_model(config, device, should_train=True, verbose=False, state_dict=None, epoch_callback=None):
-    import priors as priors
-    from train import train, Losses
+def get_model(config, device, should_train=True, verbose=False, state_dict=None, epoch_callback=None,
+              prompt_embeddings=None, prompt_dim=None, is_baseline=None, conv_type=None):
+    import nodepfn.priors as priors
+    from nodepfn.train import train, Losses
     extra_kwargs = {}
     verbose_train, verbose_prior = verbose >= 1, verbose >= 2
     config['verbose'] = verbose_prior
@@ -294,6 +305,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
 
     epochs = 0 if not should_train else config['epochs']
     #print('MODEL BUILDER', model_proto, extra_kwargs['get_batch'])
+    resolved_conv_type = conv_type if conv_type is not None else config.get('conv_type', 'gcn')
+
     model = train(model_proto.DataLoader
                   , loss
                   , encoder
@@ -318,14 +331,20 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , recompute_attn=config['recompute_attn']
                   , epoch_callback=epoch_callback
                   , bptt_extra_samples = config['bptt_extra_samples']
-                  , train_mixed_precision = config['train_mixed_precision']
-                  , extra_prior_kwargs_dict={
+                , train_mixed_precision = config['train_mixed_precision']
+                , extra_prior_kwargs_dict={
             'num_features': config['num_features']
             , 'hyperparameters': prior_hyperparameters
             #, 'dynamic_batch_size': 1 if ('num_global_att_tokens' in config and config['num_global_att_tokens']) else 2
             , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
+            , 'prompt_dim': prompt_dim
             , **extra_kwargs
         }
+                , is_baseline=config.get('is_baseline', False) if is_baseline is None else is_baseline
+                , use_gps_style=config.get('use_gps_style', True)
+                , prompt_dim=prompt_dim
+                                , prompt_embeddings=prompt_embeddings
+                                , conv_type=resolved_conv_type
                   , lr=config['lr']
                   , verbose=verbose_train,
                   weight_decay=config.get('weight_decay', 0.0))

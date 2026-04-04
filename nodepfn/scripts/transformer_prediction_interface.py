@@ -108,7 +108,7 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, device='cpu', base_path=pathlib.Path(__file__).parent.parent.resolve(), model_string='',
                  N_ensemble_configurations=3, no_preprocess_mode=False, multiclass_decoder='permutation',
                  feature_shift_decoder=True, only_inference=True, seed=0, no_grad=True, batch_size_inference=32,
-                 subsample_features=False, i=0, e=0):
+                 subsample_features=False, prompt_embeddings=None, prompt_dim=None, i=0, e=0):
         """
         Initializes the classifier and loads the model. 
         Depending on the arguments, the model is either loaded from memory, from a file, or downloaded from the 
@@ -178,6 +178,8 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
             "If no_grad is false, no_preprocess_mode must be true, because otherwise no gradient can be computed."
 
         self.batch_size_inference = batch_size_inference
+        self.prompt_embeddings = prompt_embeddings
+        self.prompt_dim = prompt_dim
 
     def remove_models_from_memory(self):
         self.models_in_memory = {}
@@ -264,10 +266,11 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
         y_full = torch.tensor(y_full, device=self.device).float().unsqueeze(1)
 
         eval_pos = self.X_.shape[0]
-
         prediction = transformer_predict(self.model[2], X_full, y_full, eval_pos, self.edge_index,
                                          device=self.device,
                                          style=self.style,
+                         prompt_embeddings=self.prompt_embeddings,
+                         prompt_dim=self.prompt_dim,
                                          inference_mode=True,
                                          preprocess_transform='none' if self.no_preprocess_mode else 'mix',
                                          extend_features=True,
@@ -319,6 +322,8 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
                         seed=0,
                         no_grad=True,
                         return_logits=False,
+                        prompt_embeddings=None,
+                        prompt_dim=None,
                         **kwargs):
     """
 
@@ -347,16 +352,22 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
     """
     num_classes = len(torch.unique(eval_ys))
 
-    def predict(eval_xs, eval_ys, used_style, softmax_temperature, return_logits):
+    def predict(eval_xs, eval_ys, used_style, softmax_temperature, return_logits, prompt_src):
         # Initialize results array size S, B, Classes
 
         # no_grad disables inference_mode, because otherwise the gradients are lost
         inference_mode_call = torch.inference_mode() if inference_mode and no_grad else NOP()
         with inference_mode_call:
             start = time.time()
-            output = model(
-                    (used_style.repeat(eval_xs.shape[1], 1) if used_style is not None else None, eval_xs, eval_ys.float(), edge_index),
-                    single_eval_pos=eval_position)[:, :, 0:num_classes]
+            model_input = (
+                used_style.repeat(eval_xs.shape[1], 1) if used_style is not None else None,
+                eval_xs,
+                eval_ys.float(),
+                edge_index,
+            )
+            if prompt_src is not None:
+                model_input = (*model_input, prompt_src)
+            output = model(model_input, single_eval_pos=eval_position)[:, :, 0:num_classes]
 
             output = output[:, :, 0:num_classes] / torch.exp(softmax_temperature)
             if not return_logits:
@@ -415,6 +426,11 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
                                                normalize_with_sqrt=normalize_with_sqrt)
 
         return eval_xs.to(device)
+
+    if edge_index is not None:
+        if not torch.is_tensor(edge_index):
+            edge_index = torch.as_tensor(edge_index, dtype=torch.long)
+        edge_index = edge_index.to(device)
 
     eval_xs, eval_ys = eval_xs.to(device), eval_ys.to(device)
     eval_ys = eval_ys[:eval_position]
@@ -506,6 +522,32 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
     outputs = []
     start = time.time()
     for batch_input, batch_label in zip(inputs, labels):
+        prompt_src = None
+        if prompt_embeddings is not None:
+            batch_size = batch_input.shape[1]
+            if isinstance(prompt_embeddings, list):
+                if len(prompt_embeddings) == 0:
+                    raise ValueError('prompt_embeddings list is empty')
+                indices = torch.randint(0, len(prompt_embeddings), (batch_size,))
+                sampled = [prompt_embeddings[i] for i in indices.tolist()]
+                from nodepfn.ginat.embed_text import collate_prompts
+                prompt_features, prompt_mask = collate_prompts(sampled)
+            else:
+                indices = torch.randint(0, prompt_embeddings.shape[0], (batch_size,))
+                prompt_features = prompt_embeddings[indices]
+                if prompt_features.dim() == 2:
+                    prompt_features = prompt_features.unsqueeze(1)
+                prompt_mask = torch.ones(
+                    prompt_features.shape[:2], dtype=torch.bool, device=prompt_features.device
+                )
+            prompt_src = (prompt_features.to(device), prompt_mask.to(device))
+        elif prompt_dim is not None:
+            batch_size = batch_input.shape[1]
+            prompt_features = torch.zeros(
+                (batch_size, 1, prompt_dim), device=device, dtype=batch_input.dtype
+            )
+            prompt_mask = torch.ones((batch_size, 1), device=device, dtype=torch.bool)
+            prompt_src = (prompt_features, prompt_mask)
         #preprocess_transform_ = preprocess_transform if styles_configuration % 2 == 0 else 'none'
         import warnings
         with warnings.catch_warnings():
@@ -514,10 +556,10 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
             warnings.filterwarnings("ignore",
                                     message="torch.cuda.amp.autocast only affects CUDA ops, but CUDA is not available.  Disabling.")
             if device == 'cpu':
-                output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, use_reentrant=False)
+                output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, prompt_src, use_reentrant=False)
             else:
                 with torch.cuda.amp.autocast(enabled=fp16_inference):
-                    output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, use_reentrant=False)
+                    output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, prompt_src, use_reentrant=False)
         outputs += [output_batch]
     #print('MODEL INFERENCE TIME ('+str(batch_input.device)+' vs '+device+', '+str(fp16_inference)+')', str(time.time()-start))
 

@@ -9,6 +9,8 @@ import numpy as np
 import scipy.stats as stats
 import math
 
+from nodepfn.ginat.embed_text import collate_prompts
+
 def get_batch_to_dataloader(get_batch_method_):
     class DL(PriorDataLoader):
         get_batch_method = get_batch_method_
@@ -29,9 +31,46 @@ def get_batch_to_dataloader(get_batch_method_):
             # A transformer with quadratic memory usage in the seq len would need a power of 2 to keep memory constant.
             if 'dynamic_batch_size' in kwargs and kwargs['dynamic_batch_size'] > 0 and kwargs['dynamic_batch_size']:
                 kwargs['batch_size'] = kwargs['batch_size'] * math.floor(math.pow(kwargs['seq_len_maximum'], kwargs['dynamic_batch_size']) / math.pow(kwargs['seq_len'], kwargs['dynamic_batch_size']))
+            prompt_embeddings = kwargs.pop('prompt_embeddings', None)
             batch = get_batch_method_(*args, **kwargs)
             x, y, target_y, edge_index, style = batch if len(batch) == 5 else (batch[0], batch[1], batch[2], batch[3], None)
-            return (style, x, y, edge_index), target_y, kwargs['single_eval_pos']
+
+            batch_size = kwargs['batch_size']
+            prompt_dim = kwargs.get('prompt_dim')
+            prompt_device = x.device if torch.is_tensor(x) else None
+
+            if prompt_embeddings is not None:
+                if isinstance(prompt_embeddings, list):
+                    if len(prompt_embeddings) == 0:
+                        raise ValueError('prompt_embeddings list is empty')
+                    indices = torch.randint(0, len(prompt_embeddings), (batch_size,))
+                    sampled = [prompt_embeddings[i] for i in indices.tolist()]
+                    prompt_features, prompt_mask = collate_prompts(sampled)
+                else:
+                    indices = torch.randint(0, prompt_embeddings.shape[0], (batch_size,))
+                    prompt_features = prompt_embeddings[indices]
+                    if prompt_features.dim() == 2:
+                        prompt_features = prompt_features.unsqueeze(1)
+                    prompt_mask = torch.ones(
+                        prompt_features.shape[:2], dtype=torch.bool, device=prompt_features.device
+                    )
+            else:
+                if prompt_dim is None:
+                    prompt_dim = 4096
+                prompt_features = torch.zeros(
+                    (batch_size, 1, prompt_dim),
+                    device=prompt_device,
+                    dtype=x.dtype if torch.is_tensor(x) else torch.float32,
+                )
+                prompt_mask = torch.ones(
+                    (batch_size, 1), dtype=torch.bool, device=prompt_device
+                )
+
+            if prompt_device is not None:
+                prompt_features = prompt_features.to(prompt_device)
+                prompt_mask = prompt_mask.to(prompt_device)
+
+            return (style, x, y, edge_index, (prompt_features, prompt_mask)), target_y, kwargs['single_eval_pos']
 
         def __len__(self):
             return self.num_steps

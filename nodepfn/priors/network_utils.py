@@ -49,5 +49,8 @@ def generate_edge_index(x, y, h, device):
                 G.add_edge(node_mapping[i], node_mapping[j])
         
         edges = list(G.edges())
-        edge_index = torch.tensor(edges, device=device).t()
+        if len(edges) == 0:
+            edge_index = torch.empty((2, 0), dtype=torch.long, device=device)
+        else:
+            edge_index = torch.tensor(edges, device=device, dtype=torch.long).t()
     return edge_index

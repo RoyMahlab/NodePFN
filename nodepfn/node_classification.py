@@ -143,13 +143,25 @@ def run_experiments(args):
 
         start_time = time.time()
         base_model_path = args.base_model_path
+        prompt_embeddings = None
+        if args.prompts_file is not None:
+            from nodepfn.ginat.embed_text import load_or_embed_prompts
+            prompt_embeddings = load_or_embed_prompts(
+                prompts_file=args.prompts_file,
+                hf_model=args.hf_model,
+                device=torch.device('cpu' if args.cpu else 'cuda'),
+                cache_dir=args.prompt_cache_dir,
+            )
+
         clf = NodePFNClassifier(device='cpu' if args.cpu else 'cuda', base_path=base_model_path,
                                N_ensemble_configurations=args.n_ensemble,
                                seed=args.seed,
                                batch_size_inference=args.batch_size_inference,
                                subsample_features=True,
+                               prompt_embeddings=prompt_embeddings,
+                               prompt_dim=args.prompt_dim,
                                i=0, e=args.e)
-
+        
         clf.fit(X_train, y_train, edge_index_run, overwrite_warning=True)
         fit_time = time.time() - start_time
 
@@ -217,6 +229,10 @@ if __name__ == "__main__":
                         help='use random splits with a fixed number of labeled nodes for each class')
     parser.add_argument('--rand_split_class_half', action='store_true',
                         help='use random splits with a fixed number of labeled nodes for each class')
+    parser.add_argument('--prompts_file', type=str, default=None, help='Path to the prompts JSON file')
+    parser.add_argument('--hf_model', type=str, default='meta-llama/Llama-2-7b-hf')
+    parser.add_argument('--prompt_cache_dir', type=str, default=None, help='Cache directory for prompt embeddings')
+    parser.add_argument('--prompt_dim', type=int, default=4096)
     
     parser.add_argument('--label_num_per_class', type=int, default=20,
                         help='labeled nodes per class(randomly selected)')
