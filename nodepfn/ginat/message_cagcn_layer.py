@@ -366,6 +366,8 @@ class MCAMPNN(tnn.Module):
         Returns:
             Tensor: Output node representations.
         """
+
+        # import pdb; pdb.set_trace()  # --- IGNORE ---
         # Unpack extra features
         extra_features, extra_mask = extra_features
         # Extract node features, edge indices, and batch information

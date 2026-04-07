@@ -129,7 +129,6 @@ class CrossAttentionLayer(tnn.Module):
 
         if kv_mask is not None:
             kv_mask = ~kv_mask  # Invert mask: True for padding positions
-
         q_batch, q_mask = to_dense_batch(messages, messages_batch)
 
         attn_output, _ = self.cross_attention(
@@ -736,7 +735,40 @@ class MCAGCNConv(pygnn.conv.GCNConv):
             Tensor: Updated node representations after message passing and linear
                     transformations.
         """
-        
+        if x.dim() == 3:
+            outputs = []
+            for batch_index in range(x.shape[0]):
+                batch_x = x[batch_index]
+                batch_edge_weight = edge_weight
+                if batch_edge_weight is not None and batch_edge_weight.dim() > 1:
+                    batch_edge_weight = batch_edge_weight[batch_index]
+                batch_extra_kv = extra_kv[batch_index:batch_index + 1] if extra_kv is not None else None
+                batch_extra_kv_mask = extra_kv_mask[batch_index:batch_index + 1] if extra_kv_mask is not None else None
+                batch_graphs = graphs_batch
+                if batch_graphs is None:
+                    batch_graphs = torch.zeros(batch_x.size(0), dtype=torch.long, device=batch_x.device)
+
+                self._extra_kv = batch_extra_kv
+                self._extra_kv_mask = batch_extra_kv_mask
+                self._x_j_batch = batch_graphs[edge_index[1]]
+
+                outputs.append(
+                    super(MCAGCNConv, self).forward(
+                        x=batch_x,
+                        edge_index=edge_index,
+                        edge_weight=batch_edge_weight,
+                    )
+                )
+
+                self._extra_kv = None
+                self._extra_kv_mask = None
+                self._x_j_batch = None
+
+            return torch.stack(outputs, dim=0)
+
+        if graphs_batch is None:
+            graphs_batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+
         # Store extra key-value features and batch info for use in message function
         self._extra_kv = extra_kv
         self._extra_kv_mask = extra_kv_mask
@@ -744,12 +776,12 @@ class MCAGCNConv(pygnn.conv.GCNConv):
 
         # Call parent GCNConv forward method (this will call our overridden message method)
         result = super(MCAGCNConv, self).forward(x=x, edge_index=edge_index, edge_weight=edge_weight)
-        
+
         # Clean up stored variables
         self._extra_kv = None
         self._extra_kv_mask = None
         self._x_j_batch = None
-        
+
         return result
 
     def message(self, x_j: Tensor, edge_weight: Optional[Tensor]) -> Tensor:

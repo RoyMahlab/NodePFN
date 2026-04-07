@@ -75,7 +75,7 @@ def load_model_only_inference(path, filename, device):
     model.criterion = loss
     module_prefix = 'module.'
     model_state = {k.replace(module_prefix, ''): v for k, v in model_state.items()}
-    model.load_state_dict(model_state)
+    model.load_state_dict(model_state, strict=False)
     model.to(device)
     model.eval()
 

@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -13,6 +13,7 @@ from nodepfn.ginat.message_cagcn_layer import MCAMPNN
 from nodepfn.ginat.layers import resolve_target_backbone
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 import torch_geometric.nn as pygnn
+from torch_geometric.data import Data
 from torch_geometric.utils import to_undirected, remove_self_loops, add_self_loops
 
 
@@ -41,7 +42,7 @@ class TransformerModel(nn.Module):
         encoder_layer_creator = lambda: TransformerEncoderLayer(ninp, nhead, nhid, dropout, activation=activation,
                                                                 pre_norm=pre_norm, recompute_attn=recompute_attn,
                                                                 local_gnn_type=local_gnn_type, 
-                                                                use_gps_style=use_gps_style)
+                                                                use_gps_style=use_gps_style, conv_type=conv_type)
         self.transformer_encoder = TransformerEncoderDiffInit(encoder_layer_creator, nlayers)
         self.ninp = ninp
         self.encoder = encoder
@@ -60,7 +61,7 @@ class TransformerModel(nn.Module):
 
         self.n_out = n_out
         self.nhid = nhid
-        if use_gps_style:
+        if not use_gps_style:
             if self.is_baseline:
                 self.local_model = pygnn.SimpleConv(aggr='sum')
             else:
@@ -75,9 +76,6 @@ class TransformerModel(nn.Module):
                 )
         else:
             self.local_model = None 
-
-        self.prompt_dim = prompt_dim
-        self.prompt_proj = nn.Linear(prompt_dim, ninp) if prompt_dim is not None else None
 
         self.init_weights()
 
@@ -147,12 +145,15 @@ class TransformerModel(nn.Module):
 
         if len(src) == 2: # (x,y) and no style
             src = (None,) + src
-
+            
         if len(src) == 4:
             style_src, x_src, y_src, edge_index = src
             prompt_src = None
         elif len(src) == 5:
             style_src, x_src, y_src, edge_index, prompt_src = src
+            prompt_features, prompt_mask = prompt_src
+            prompt_features = prompt_features.to(x_src.device)
+            prompt_mask = prompt_mask.to(x_src.device)
         else:
             raise ValueError(f'Unexpected src tuple length: {len(src)}')
         edge_index = to_undirected(edge_index)
@@ -166,10 +167,6 @@ class TransformerModel(nn.Module):
                 if isinstance(self.local_model, MCAMPNN):
                     edge_index = edge_index.to(x_src.device)
                     if prompt_src is not None:
-                        from torch_geometric.data import Data
-                        prompt_features, prompt_mask = prompt_src
-                        prompt_features = prompt_features.to(x_src.device)
-                        prompt_mask = prompt_mask.to(x_src.device)
                         if x_src.dim() == 3:
                             batch_outputs = []
                             for b in range(x_src.shape[1]):
@@ -242,7 +239,7 @@ class TransformerModel(nn.Module):
                 src = self.pos_encoder(src)
 
         if self.use_gps_style:
-            output = self.transformer_encoder(src, src_mask, edge_index=edge_index)
+            output = self.transformer_encoder(src, src_mask, edge_index=edge_index, extra_features=(prompt_features, prompt_mask) if prompt_src is not None else None)
         else:
             output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
@@ -317,7 +314,7 @@ class TransformerEncoderDiffInit(Module):
         self.norm = norm
 
     def forward(self, src: Tensor, mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, 
-                edge_index: Optional[Tensor] = None) -> Tensor:
+                edge_index: Optional[Tensor] = None, extra_features: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> Tensor:
         r"""Pass the input through the encoder layers in turn.
 
         Args:
@@ -332,7 +329,7 @@ class TransformerEncoderDiffInit(Module):
         output = src
 
         for mod in self.layers:
-            output = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, edge_index=edge_index)
+            output = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, edge_index=edge_index, extra_features=extra_features)
 
         if self.norm is not None:
             output = self.norm(output)

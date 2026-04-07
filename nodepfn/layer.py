@@ -1,13 +1,16 @@
 from functools import partial
 
+from typing import Tuple
 from torch import nn
 import torch
 from torch.nn.modules.transformer import _get_activation_fn, Module, Tensor, Optional, MultiheadAttention, Linear, Dropout, LayerNorm
 from torch.utils.checkpoint import checkpoint
 import torch_geometric.nn as pygnn
+from torch_geometric.data import Data
 from torch_geometric.nn import Linear as Linear_pyg
 import torch.nn.functional as F
-
+from nodepfn.ginat.message_cagcn_layer import MCAMPNN
+from nodepfn.ginat.layers import resolve_target_backbone
 
 class TransformerEncoderLayer(Module):
     r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
@@ -44,7 +47,7 @@ class TransformerEncoderLayer(Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu",
                  layer_norm_eps=1e-5, batch_first=False, pre_norm=False,
                  device=None, dtype=None, recompute_attn=False, local_gnn_type='GCN', 
-                 use_gps_style=True) -> None:
+                 use_gps_style=True, conv_type='gcn') -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
         
@@ -63,7 +66,16 @@ class TransformerEncoderLayer(Module):
             self.local_gnn_with_edge_attr = True
             if local_gnn_type == "GCN":
                 self.local_gnn_with_edge_attr = False
-                self.local_model = pygnn.GCNConv(d_model, d_model)
+                # self.local_model = pygnn.GCNConv(d_model, d_model)
+                self.local_model = self.local_model = MCAMPNN(
+                    conv_cls=resolve_target_backbone(conv_type, False),
+                    node_features_channels=d_model,
+                    extra_features_channels=4096,
+                    out_channels=d_model,
+                    hidden_channels=512,
+                    num_layers=1,
+                    attn_heads=4
+                )
             elif local_gnn_type == 'GIN':
                 self.local_gnn_with_edge_attr = False
                 gin_nn = nn.Sequential(Linear_pyg(d_model, d_model),
@@ -113,7 +125,7 @@ class TransformerEncoderLayer(Module):
         super().__setstate__(state)
 
     def forward(self, src: Tensor, src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, 
-                edge_index: Optional[Tensor] = None) -> Tensor:
+                edge_index: Optional[Tensor] = None, extra_features: Optional[Tuple[torch.Tensor, torch.Tensor]] = None) -> Tensor:
         r"""Pass the input through the encoder layer.
 
         Args:
@@ -127,7 +139,6 @@ class TransformerEncoderLayer(Module):
         """
         h = src
         h_in1 = h  # for first residual connection
-
         if self.use_gps_style:
             # GPS-style: combine local MPNN and PFN attention
             h_out_list = []
@@ -139,7 +150,30 @@ class TransformerEncoderLayer(Module):
                 else:
                     h_local_input = h
                     
-                h_local = self.local_model(h_local_input.transpose(0,1), edge_index).transpose(0,1)
+                if isinstance(self.local_model, MCAMPNN):
+                    if extra_features is None:
+                        h_local = None
+                    else:
+                        prompt_features, prompt_mask = extra_features
+                        prompt_features = prompt_features.to(h_local_input.device)
+                        prompt_mask = prompt_mask.to(h_local_input.device)
+
+                        if h_local_input.dim() == 3:
+                            batch_outputs = []
+                            for b in range(h_local_input.shape[1]):
+                                graph = Data(x=h_local_input[:, b, :], edge_index=edge_index)
+                                batch_prompt = (prompt_features[b:b+1], prompt_mask[b:b+1])
+                                batch_outputs.append(self.local_model(graph, extra_features=batch_prompt))
+                            h_local = torch.stack(batch_outputs, dim=1)
+                        else:
+                            graph = Data(x=h_local_input, edge_index=edge_index)
+                            h_local = self.local_model(graph, extra_features=(prompt_features, prompt_mask))
+                else:
+                    h_local = self.local_model(h_local_input.transpose(0,1), edge_index).transpose(0,1)
+
+                if h_local is None:
+                    h_local = torch.zeros_like(h)
+                
                 h_local = self.dropout_local(h_local)
                 h_local = h_in1 + h_local  # Residual connection
                 

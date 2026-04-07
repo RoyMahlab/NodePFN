@@ -367,7 +367,8 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
             )
             if prompt_src is not None:
                 model_input = (*model_input, prompt_src)
-            output = model(model_input, single_eval_pos=eval_position)[:, :, 0:num_classes]
+            
+            output = model(src=model_input, single_eval_pos=eval_position)[:, :, 0:num_classes]
 
             output = output[:, :, 0:num_classes] / torch.exp(softmax_temperature)
             if not return_logits:
