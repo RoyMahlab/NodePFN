@@ -1,4 +1,5 @@
 import argparse
+import pandas as pd
 import random
 import numpy as np
 import torch
@@ -199,8 +200,22 @@ def run_experiments(args):
         print(f"Run {run+1}: val acc={accuracy_valid:.4f}, test acc={accuracy_test:.4f}")
 
     print("\n================ Summary ================")
-    print(f"Validation Accuracy: {np.mean(valid_accuracies)*100:.2f} ± {np.std(valid_accuracies)*100:.2f}")
-    print(f"Test Accuracy: {np.mean(test_accuracies)*100:.2f} ± {np.std(test_accuracies)*100:.2f}")
+    fit_times = np.array(fit_times)
+    test_acc, test_std = np.mean(test_accuracies)*100, np.std(test_accuracies)*100
+    val_acc, val_std = np.mean(valid_accuracies)*100, np.std(valid_accuracies)*100
+    fit_times_mean, fit_times_std = np.mean(fit_times), np.std(fit_times)
+    print(f"Test Accuracy: {test_acc:.2f} ± {test_std:.2f}")
+    print(f"Validation Accuracy: {val_acc:.2f} ± {val_std:.2f}")
+    exp_name = args.base_model_path.split('/')[-1]
+    os.makedirs(f'results/{exp_name}', exist_ok=True)
+    pd.DataFrame({
+        'valid_accuracy_mean': val_acc,
+        'valid_accuracy_std': val_std,
+        'test_accuracy_mean': test_acc,
+        'test_accuracy_std': test_std,
+        'fit_time_sec_mean': fit_times_mean,
+        'fit_time_sec_std': fit_times_std
+    }, index=[0]).to_csv(f'results/{exp_name}/{args.dataset}_nodepfn_results_{exp_name}.csv', index=False)
     if all(v is not None for v in valid_roc_aucs):
         print(f"Validation ROC AUC: {np.mean(valid_roc_aucs)*100:.2f} ± {np.std(valid_roc_aucs)*100:.2f}")
     if all(v is not None for v in test_roc_aucs):
