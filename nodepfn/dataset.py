@@ -6,7 +6,7 @@ import torch_geometric.transforms as T
 from torch_geometric.data import Data
 from torch_geometric.datasets import (
     Amazon, Coauthor, WikiCS, Planetoid, Reddit,
-    CoraFull, WebKB, WikipediaNetwork, HeterophilousGraphDataset, Actor, DeezerEurope, Airports
+    CoraFull, WebKB, WikipediaNetwork, HeterophilousGraphDataset, Actor, DeezerEurope, Airports, DBLP
 )
 from ogb.nodeproppred import NodePropPredDataset, PygNodePropPredDataset
 
@@ -138,7 +138,30 @@ def load_actor(data_dir):
     return wrap_tg_dataset('actor', d)
 
 def load_deezer_europe(data_dir):
-    d = DeezerEurope(root=f'{data_dir}/DeezerEurope')[0]
+    import os
+    import urllib.request
+
+    root = f'{data_dir}/DeezerEurope'
+    raw_dir = os.path.join(root, 'raw')
+    raw_path = os.path.join(raw_dir, 'deezer_europe.npz')
+
+    if not os.path.exists(raw_path):
+        os.makedirs(raw_dir, exist_ok=True)
+        fallback_urls = [
+            'https://data.pyg.org/datasets/deezer_europe.npz',
+        ]
+        last_error = None
+        for url in fallback_urls:
+            try:
+                urllib.request.urlretrieve(url, raw_path)
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+
+    d = DeezerEurope(root=root)[0]
     return wrap_tg_dataset('deezer-europe', d)
 
 
@@ -217,31 +240,84 @@ def load_dblp(data_dir):
     path = os.path.join(data_dir, 'dblp',  'dblp.npz')
     # path = os.path.join(data_dir, 'dblp', 'dblp', 'dblp.npz')
 
-    with np.load(path, allow_pickle=True) as f:
-        # adjacency
-        adj = sparse.csr_matrix(
-            (f['adj_data'], f['adj_indices'], f['adj_indptr']),
-            shape=f['adj_shape']
-        )
-        # features
-        feat = sparse.csr_matrix(
-            (f['attr_data'], f['attr_indices'], f['attr_indptr']),
-            shape=f['attr_shape']
-        ).toarray()
-        # labels
-        labels = f['labels']
+    if os.path.exists(path):
+        with np.load(path, allow_pickle=True) as f:
+            # adjacency
+            adj = sparse.csr_matrix(
+                (f['adj_data'], f['adj_indices'], f['adj_indptr']),
+                shape=f['adj_shape']
+            )
+            # features
+            feat = sparse.csr_matrix(
+                (f['attr_data'], f['attr_indices'], f['attr_indptr']),
+                shape=f['attr_shape']
+            ).toarray()
+            # labels
+            labels = f['labels']
 
-    edge_index = torch.tensor(np.vstack(adj.nonzero()), dtype=torch.long)
-    x = torch.tensor(feat, dtype=torch.float)
-    y = torch.tensor(labels.squeeze(), dtype=torch.long)
+        edge_index = torch.tensor(np.vstack(adj.nonzero()), dtype=torch.long)
+        x = torch.tensor(feat, dtype=torch.float)
+        y = torch.tensor(labels.squeeze(), dtype=torch.long)
 
-    data = Data(x=x, edge_index=edge_index, y=y)
+        data = Data(x=x, edge_index=edge_index, y=y)
+        return wrap_tg_dataset('dblp', data)
+
+    pyg_dataset = DBLP(root=f'{data_dir}/DBLP')
+    hetero_data = pyg_dataset[0]
+    author_type_id = hetero_data.node_types.index('author')
+    data = hetero_data.to_homogeneous()
+
+    feature_dims = []
+    for node_type in hetero_data.node_types:
+        if hasattr(hetero_data[node_type], 'x') and hetero_data[node_type].x is not None:
+            feature_dims.append(hetero_data[node_type].x.size(-1))
+    feature_dim = max(feature_dims) if feature_dims else 1
+
+    x_parts = []
+    for node_type in hetero_data.node_types:
+        num_nodes = hetero_data[node_type].num_nodes
+        if hasattr(hetero_data[node_type], 'x') and hetero_data[node_type].x is not None:
+            x_type = hetero_data[node_type].x
+            if x_type.size(-1) < feature_dim:
+                pad = x_type.new_zeros((num_nodes, feature_dim - x_type.size(-1)))
+                x_type = torch.cat([x_type, pad], dim=-1)
+        else:
+            x_type = torch.zeros((num_nodes, feature_dim), dtype=torch.float)
+        x_parts.append(x_type)
+    data.x = torch.cat(x_parts, dim=0)
+
+    if hasattr(hetero_data['author'], 'y'):
+        author_nodes = data.node_type == author_type_id
+        y = torch.full((data.num_nodes,), -1, dtype=hetero_data['author'].y.dtype)
+        y[author_nodes] = hetero_data['author'].y
+        data.y = y
+
+    if hasattr(hetero_data['author'], 'train_mask'):
+        author_nodes = data.node_type == author_type_id
+        train_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+        val_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+        test_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+        train_mask[author_nodes] = hetero_data['author'].train_mask
+        val_mask[author_nodes] = hetero_data['author'].val_mask
+        test_mask[author_nodes] = hetero_data['author'].test_mask
+        data.train_mask = train_mask
+        data.val_mask = val_mask
+        data.test_mask = test_mask
+
     return wrap_tg_dataset('dblp', data)
 
 
 def load_deezer_dataset(data_dir):
     import json, pandas as pd, torch, os
     base = os.path.join(data_dir, 'deezer')
+
+    required_files = [
+        os.path.join(base, 'DE_edges.csv'),
+        os.path.join(base, 'DE.json'),
+        os.path.join(base, 'DE_target.csv'),
+    ]
+    if not all(os.path.exists(path) for path in required_files):
+        return load_deezer_europe(data_dir)
 
     edges = pd.read_csv(os.path.join(base, 'DE_edges.csv'))
     edge_index = torch.tensor(edges.values.T, dtype=torch.long)
@@ -302,10 +378,8 @@ def load_dataset(data_dir, name):
         return load_cora_full(data_dir)
     if name in ('cornell', 'texas', 'wisconsin'):
         return load_webkb(data_dir, name)
-    if name in ('chameleon'):
+    if name in ('chameleon', 'squirrel'):
         return load_wikipedia_network(data_dir, name)
-    if name in ('squirrel'):
-        return load_wikipedia_network_squirrel(data_dir, name)
     if name in ('roman-empire', 'amazon-ratings', 'minesweeper', 'tolokers', 'questions'):
         return load_hetero(data_dir, name)
     if name in ('ogbn-arxiv', 'ogbn-products'):

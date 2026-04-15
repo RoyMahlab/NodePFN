@@ -167,7 +167,6 @@ def run_experiments(args):
 
         predictions, p_eval = clf.predict(X_query, normalize_with_test=True, return_winning_probability=True)
         prediction_probabilities = clf.predict_proba(X_query, normalize_with_test=True)
-
         y_valid = y_query[valid_mask]
         y_test = y_query[test_mask]
         pred_valid = predictions[valid_mask]

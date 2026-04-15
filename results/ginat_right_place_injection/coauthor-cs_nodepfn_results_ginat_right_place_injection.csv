@@ -1,0 +1,2 @@
+valid_accuracy_mean,valid_accuracy_std,test_accuracy_mean,test_accuracy_std,fit_time_sec_mean,fit_time_sec_std
+90.47027506654835,0.40011499147432505,90.31385161361871,0.3507438295133573,0.42344160079956056,0.7444481641347631
