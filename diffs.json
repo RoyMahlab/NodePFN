@@ -1,0 +1,10 @@
+[
+  {"dataset": "amazon-computer", "gap": 12.0200},
+  {"dataset": "cornell", "gap": 8.1100},
+  {"dataset": "wikics", "gap": 4.7100},
+  {"dataset": "actor", "gap": 3.9100},
+  {"dataset": "squirrel", "gap": 2.3700},
+  {"dataset": "texas", "gap": 2.1600},
+  {"dataset": "air-europe", "gap": 1.8700},
+  {"dataset": "wisconsin", "gap": 1.1800}
+]

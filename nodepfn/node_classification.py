@@ -153,6 +153,7 @@ def run_experiments(args):
                 device=torch.device('cpu' if args.cpu else 'cuda'),
                 cache_dir=args.prompt_cache_dir,
             )
+            prompt_embeddings = [embeddings.to(torch.float32) for embeddings in prompt_embeddings]
         clf = NodePFNClassifier(device='cpu' if args.cpu else 'cuda', base_path=base_model_path,
                                N_ensemble_configurations=args.n_ensemble,
                                seed=args.seed,
