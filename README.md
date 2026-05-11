@@ -52,7 +52,7 @@ pip install numpy==1.26.4 networkx==3.3 scikit-learn==1.4.0
 Pre-train the NodePFN model on synthetic graph priors. **This step is required only once** — the resulting checkpoint can then be used for inference on arbitrary graphs.
 
 ```bash
-python nodepfn/main.py --model_name {your_model_name}
+python -m nodepfn.pretrain --model_name test --is_baseline
 ```
 
 > A pre-trained checkpoint is also available for download. See [Releases](models_ckpts/nodepfn/checkpoint_epoch_30.ckpt).
