@@ -101,14 +101,6 @@ def zipf_sampler_f(a, b, c):
     return lambda : stats.rv_discrete(name='bounded_zipf', values=(x, weights)).rvs(1)
 scaled_beta_sampler_f = lambda a, b, scale, minimum : lambda : minimum + round(beta_sampler_f(a, b)() * (scale - minimum))
 
-def order_by_y(x, y):
-    order = torch.argsort(y if random.randint(0, 1) else -y, dim=0)[:, 0, 0]
-    order = order.reshape(2, -1).transpose(0, 1).reshape(-1)#.reshape(seq_len)
-    x = x[order]  # .reshape(2, -1).transpose(0, 1).reshape(-1).flip([0]).reshape(seq_len, 1, -1)
-    y = y[order]  # .reshape(2, -1).transpose(0, 1).reshape(-1).reshape(seq_len, 1, -1)
-
-    return x, y
-
 def randomize_classes(x, num_classes):
     classes = torch.arange(0, num_classes, device=x.device)
     random_classes = torch.randperm(num_classes, device=x.device).type(x.type())

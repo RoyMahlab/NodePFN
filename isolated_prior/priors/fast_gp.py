@@ -1,5 +1,3 @@
-import time
-
 import torch
 from torch import nn
 import gpytorch
@@ -98,49 +96,3 @@ def get_batch(batch_size, seq_len, num_features, device=default_device, hyperpar
 
 DataLoader = get_batch_to_dataloader(get_batch)
 DataLoader.num_outputs = 1
-
-def get_model_on_device(x,y,hyperparameters,device):
-    model, likelihood = get_model(x, y, hyperparameters)
-    model.to(device)
-    return model, likelihood
-
-
-@torch.no_grad()
-def evaluate(x, y, y_non_noisy, use_mse=False, hyperparameters={}, get_model_on_device=get_model_on_device, device=default_device, step_size=1, start_pos=0):
-    start_time = time.time()
-    losses_after_t = [.0] if start_pos == 0 else []
-    all_losses_after_t = []
-
-    with gpytorch.settings.fast_computations(*hyperparameters.get('fast_computations',(True,True,True))), gpytorch.settings.fast_pred_var(False):
-        for t in range(max(start_pos, 1), len(x), step_size):
-            loss_sum = 0.
-            model, likelihood = get_model_on_device(x[:t].transpose(0, 1), y[:t].transpose(0, 1), hyperparameters, device)
-
-
-            model.eval()
-            # print([t.shape for t in model.train_inputs])
-            # print(x[:t].transpose(0,1).shape, x[t].unsqueeze(1).shape, y[:t].transpose(0,1).shape)
-            f = model(x[t].unsqueeze(1))
-            l = likelihood(f)
-            means = l.mean.squeeze()
-            varis = l.covariance_matrix.squeeze()
-            # print(l.variance.squeeze(), l.mean.squeeze(), y[t])
-
-            assert len(means.shape) == len(varis.shape) == 1
-            assert len(means) == len(varis) == x.shape[1]
-
-            if use_mse:
-                c = nn.MSELoss(reduction='none')
-                ls = c(means, y[t])
-            else:
-                ls = -l.log_prob(y[t].unsqueeze(1))
-
-            losses_after_t.append(ls.mean())
-            all_losses_after_t.append(ls.flatten())
-        return torch.stack(all_losses_after_t).to('cpu'), torch.tensor(losses_after_t).to('cpu'), time.time() - start_time
-
-if __name__ == '__main__':
-    hps = (.1,.1,.1)
-    for redo_idx in range(1):
-        print(
-            evaluate(*get_batch(1000, 10, hyperparameters=hps, num_features=10), use_mse=False, hyperparameters=hps))
