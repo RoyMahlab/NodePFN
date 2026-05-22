@@ -4,10 +4,10 @@ import random
 import torch
 from torch import nn
 
-from .utils import get_batch_to_dataloader
+from .utils import build_dataloader_from_get_batch
 from isolated_prior.utils import normalize_data, nan_handling_missing_for_unknown_reason_value, nan_handling_missing_for_no_reason_value, nan_handling_missing_for_a_reason_value, to_ranking_low_mem, remove_outliers, normalize_by_used_features_f
 from .utils import randomize_classes, CategoricalActivation
-from .utils import uniform_int_sampler_f
+from .utils import make_uniform_int_sampler
 from .network_utils import generate_edge_index
 
 time_it = False
@@ -22,7 +22,7 @@ class BalancedBinarize(nn.Module):
 def class_sampler_f(min_, max_):
     def s():
         if random.random() > 0.5:
-            return uniform_int_sampler_f(min_, max_)()
+            return make_uniform_int_sampler(min_, max_)()
         return 2
     return s
 
@@ -268,4 +268,4 @@ def get_batch(batch_size, seq_len, num_features, get_batch, device, hyperparamet
 
     return x, y, y_, edge_index
 
-DataLoader = get_batch_to_dataloader(get_batch)
+DataLoader = build_dataloader_from_get_batch(get_batch)

@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import gpytorch
 
-from isolated_prior.priors.utils import get_batch_to_dataloader
+from isolated_prior.priors.utils import build_dataloader_from_get_batch
 from isolated_prior.utils import default_device
 
 
@@ -92,5 +92,5 @@ def get_batch(batch_size, seq_len, num_features, device=default_device, hyperpar
     # TODO: Multi output
     return x.transpose(0, 1), sample, sample  # x.shape = (T,B,H)
 
-DataLoader = get_batch_to_dataloader(get_batch)
+DataLoader = build_dataloader_from_get_batch(get_batch)
 DataLoader.num_outputs = 1

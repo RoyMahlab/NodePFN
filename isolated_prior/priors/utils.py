@@ -1,4 +1,5 @@
 import random
+import functools
 
 import torch
 
@@ -11,95 +12,112 @@ import math
 
 from nodepfn.ginat.embed_text import collate_prompts
 
-def get_batch_to_dataloader(get_batch_method_):
-    class DL(PriorDataLoader):
-        get_batch_method = get_batch_method_
 
-        # Caution, you might need to set self.num_features manually if it is not part of the args.
-        def __init__(self, num_steps, **get_batch_kwargs):
-            set_locals_in_self(locals())
+class PriorBatchDataLoader(PriorDataLoader):
+    # Caution, you might need to set self.num_features manually if it is not part of the args.
+    def __init__(self, num_steps, get_batch_method, **get_batch_kwargs):
+        set_locals_in_self(locals())
 
-            # The stuff outside the or is set as class attribute before instantiation.
-            self.num_features = get_batch_kwargs.get('num_features') or self.num_features
-            self.epoch_count = 0
-            #print('DataLoader.__dict__', self.__dict__)
+        # The stuff outside the or is set as class attribute before instantiation.
+        self.num_features = get_batch_kwargs.get('num_features') or self.num_features
+        self.epoch_count = 0
+        #print('DataLoader.__dict__', self.__dict__)
 
-        @staticmethod
-        def gbm(*args, eval_pos_seq_len_sampler, **kwargs):
-            kwargs['single_eval_pos'], kwargs['seq_len'] = eval_pos_seq_len_sampler()
-            if kwargs.pop('debug_get_batch', False):
-                print(f"get_batch: {get_batch_method_.__module__}.{get_batch_method_.__name__}")
-            # Scales the batch size dynamically with the power of 'dynamic_batch_size'.
-            # A transformer with quadratic memory usage in the seq len would need a power of 2 to keep memory constant.
-            if 'dynamic_batch_size' in kwargs and kwargs['dynamic_batch_size'] > 0 and kwargs['dynamic_batch_size']:
-                kwargs['batch_size'] = kwargs['batch_size'] * math.floor(math.pow(kwargs['seq_len_maximum'], kwargs['dynamic_batch_size']) / math.pow(kwargs['seq_len'], kwargs['dynamic_batch_size']))
-            prompt_embeddings = kwargs.pop('prompt_embeddings', None)
-            # First call to get_batch - differentiable_prior file function
-            batch = get_batch_method_(*args, **kwargs)
-            x, y, target_y, edge_index, style = batch if len(batch) == 5 else (batch[0], batch[1], batch[2], batch[3], None)
+    def build_batch(self, *args, eval_pos_seq_len_sampler, **kwargs):
+        kwargs['single_eval_pos'], kwargs['seq_len'] = eval_pos_seq_len_sampler()
+        if kwargs.pop('debug_get_batch', False):
+            print(f"get_batch: {self.get_batch_method.__module__}.{self.get_batch_method.__name__}")
+        # Scales the batch size dynamically with the power of 'dynamic_batch_size'.
+        # A transformer with quadratic memory usage in the seq len would need a power of 2 to keep memory constant.
+        if 'dynamic_batch_size' in kwargs and kwargs['dynamic_batch_size'] > 0 and kwargs['dynamic_batch_size']:
+            kwargs['batch_size'] = kwargs['batch_size'] * math.floor(math.pow(kwargs['seq_len_maximum'], kwargs['dynamic_batch_size']) / math.pow(kwargs['seq_len'], kwargs['dynamic_batch_size']))
+        prompt_embeddings = kwargs.pop('prompt_embeddings', None)
+        # First call to get_batch - differentiable_prior file function
+        batch = self.get_batch_method(*args, **kwargs)
+        x, y, target_y, edge_index, style = batch if len(batch) == 5 else (batch[0], batch[1], batch[2], batch[3], None)
 
-            batch_size = kwargs['batch_size']
-            prompt_dim = kwargs.get('prompt_dim')
-            prompt_device = x.device if torch.is_tensor(x) else None
+        batch_size = kwargs['batch_size']
+        prompt_dim = kwargs.get('prompt_dim')
+        prompt_device = x.device if torch.is_tensor(x) else None
 
-            if prompt_embeddings is not None:
-                if isinstance(prompt_embeddings, list):
-                    if len(prompt_embeddings) == 0:
-                        raise ValueError('prompt_embeddings list is empty')
-                    indices = torch.randint(0, len(prompt_embeddings), (batch_size,))
-                    sampled = [prompt_embeddings[i] for i in indices.tolist()]
-                    prompt_features, prompt_mask = collate_prompts(sampled)
-                else:
-                    indices = torch.randint(0, prompt_embeddings.shape[0], (batch_size,))
-                    prompt_features = prompt_embeddings[indices]
-                    if prompt_features.dim() == 2:
-                        prompt_features = prompt_features.unsqueeze(1)
-                    prompt_mask = torch.ones(
-                        prompt_features.shape[:2], dtype=torch.bool, device=prompt_features.device
-                    )
+        if prompt_embeddings is not None:
+            if isinstance(prompt_embeddings, list):
+                if len(prompt_embeddings) == 0:
+                    raise ValueError('prompt_embeddings list is empty')
+                indices = torch.randint(0, len(prompt_embeddings), (batch_size,))
+                sampled = [prompt_embeddings[i] for i in indices.tolist()]
+                prompt_features, prompt_mask = collate_prompts(sampled)
             else:
-                if prompt_dim is None:
-                    prompt_dim = 4096
-                prompt_features = torch.zeros(
-                    (batch_size, 1, prompt_dim),
-                    device=prompt_device,
-                    dtype=x.dtype if torch.is_tensor(x) else torch.float32,
-                )
+                indices = torch.randint(0, prompt_embeddings.shape[0], (batch_size,))
+                prompt_features = prompt_embeddings[indices]
+                if prompt_features.dim() == 2:
+                    prompt_features = prompt_features.unsqueeze(1)
                 prompt_mask = torch.ones(
-                    (batch_size, 1), dtype=torch.bool, device=prompt_device
+                    prompt_features.shape[:2], dtype=torch.bool, device=prompt_features.device
                 )
+        else:
+            if prompt_dim is None:
+                prompt_dim = 4096
+            prompt_features = torch.zeros(
+                (batch_size, 1, prompt_dim),
+                device=prompt_device,
+                dtype=x.dtype if torch.is_tensor(x) else torch.float32,
+            )
+            prompt_mask = torch.ones(
+                (batch_size, 1), dtype=torch.bool, device=prompt_device
+            )
 
-            if prompt_device is not None:
-                prompt_features = prompt_features.to(prompt_device)
-                prompt_mask = prompt_mask.to(prompt_device)
+        if prompt_device is not None:
+            prompt_features = prompt_features.to(prompt_device)
+            prompt_mask = prompt_mask.to(prompt_device)
 
-            return (style, x, y, edge_index, (prompt_features, prompt_mask)), target_y, kwargs['single_eval_pos']
+        return (style, x, y, edge_index, (prompt_features, prompt_mask)), target_y, kwargs['single_eval_pos']
 
-        def __len__(self):
-            return self.num_steps
+    def __len__(self):
+        return self.num_steps
 
-        def get_test_batch(self): # does not increase epoch_count
-            return self.gbm(**self.get_batch_kwargs, epoch=self.epoch_count, model=self.model if hasattr(self, 'model') else None)
+    def get_test_batch(self): # does not increase epoch_count
+        return self.build_batch(**self.get_batch_kwargs, epoch=self.epoch_count, model=self.model if hasattr(self, 'model') else None)
 
-        def __iter__(self):
-            # assert hasattr(self, 'model'), "Please assign model with `dl.model = ...` before training."
-            self.epoch_count += 1
-            return iter(self.gbm(**self.get_batch_kwargs, epoch=self.epoch_count - 1, model=self.model if hasattr(self, 'model') else None) for _ in range(self.num_steps))
-
-    return DL
+    def __iter__(self):
+        # assert hasattr(self, 'model'), "Please assign model with `dl.model = ...` before training."
+        self.epoch_count += 1
+        return iter(self.build_batch(**self.get_batch_kwargs, epoch=self.epoch_count - 1, model=self.model if hasattr(self, 'model') else None) for _ in range(self.num_steps))
 
 
-trunc_norm_sampler_f = lambda mu, sigma : lambda: stats.truncnorm((0 - mu) / sigma, (1000000 - mu) / sigma, loc=mu, scale=sigma).rvs(1)[0]
-beta_sampler_f = lambda a, b : lambda : np.random.beta(a, b)
-gamma_sampler_f = lambda a, b : lambda : np.random.gamma(a, b)
-uniform_sampler_f = lambda a, b : lambda : np.random.uniform(a, b)
-uniform_int_sampler_f = lambda a, b : lambda : round(np.random.uniform(a, b))
-def zipf_sampler_f(a, b, c):
+def build_dataloader_from_get_batch(get_batch_method):
+    return functools.partial(PriorBatchDataLoader, get_batch_method=get_batch_method)
+
+
+def make_trunc_norm_sampler(mu, sigma):
+    return lambda: stats.truncnorm((0 - mu) / sigma, (1000000 - mu) / sigma, loc=mu, scale=sigma).rvs(1)[0]
+
+
+def make_beta_sampler(a, b):
+    return lambda: np.random.beta(a, b)
+
+
+def make_gamma_sampler(a, b):
+    return lambda: np.random.gamma(a, b)
+
+
+def make_uniform_sampler(a, b):
+    return lambda: np.random.uniform(a, b)
+
+
+def make_uniform_int_sampler(a, b):
+    return lambda: round(np.random.uniform(a, b))
+
+
+def make_zipf_sampler(a, b, c):
     x = np.arange(b, c)
     weights = x ** (-a)
     weights /= weights.sum()
     return lambda : stats.rv_discrete(name='bounded_zipf', values=(x, weights)).rvs(1)
-scaled_beta_sampler_f = lambda a, b, scale, minimum : lambda : minimum + round(beta_sampler_f(a, b)() * (scale - minimum))
+
+
+def make_scaled_beta_sampler(a, b, scale, minimum):
+    return lambda: minimum + round(make_beta_sampler(a, b)() * (scale - minimum))
 
 def randomize_classes(x, num_classes):
     classes = torch.arange(0, num_classes, device=x.device)
@@ -111,7 +129,7 @@ def randomize_classes(x, num_classes):
 class CategoricalActivation(nn.Module):
     def __init__(self, categorical_p=0.1, ordered_p=0.7
                  , keep_activation_size=False
-                 , num_classes_sampler=zipf_sampler_f(0.8, 1, 10)):
+                 , num_classes_sampler=make_zipf_sampler(0.8, 1, 10)):
         self.categorical_p = categorical_p
         self.ordered_p = ordered_p
         self.keep_activation_size = keep_activation_size

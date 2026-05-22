@@ -2,9 +2,9 @@ import torch
 from torch import nn
 import math
 
-from .utils import get_batch_to_dataloader
+from .utils import build_dataloader_from_get_batch
 from isolated_prior.utils import default_device
-from .utils import trunc_norm_sampler_f, beta_sampler_f, gamma_sampler_f, uniform_sampler_f, zipf_sampler_f, scaled_beta_sampler_f, uniform_int_sampler_f
+from .utils import make_trunc_norm_sampler, make_beta_sampler, make_gamma_sampler, make_uniform_sampler, make_zipf_sampler, make_scaled_beta_sampler, make_uniform_int_sampler
 
 
 def unpack_dict_of_tuples(d):
@@ -26,11 +26,11 @@ class DifferentiableHyperparameter(nn.Module):
         def get_sampler():
             if self.distribution == "uniform":
                 if not hasattr(self, 'sample'):
-                    return uniform_sampler_f(self.min, self.max), self.min, self.max, (self.max+self.min) / 2, math.sqrt(1/12*(self.max-self.min)*(self.max-self.min))
+                    return make_uniform_sampler(self.min, self.max), self.min, self.max, (self.max+self.min) / 2, math.sqrt(1/12*(self.max-self.min)*(self.max-self.min))
                 else:
                     return lambda: self.sample, self.min, self.max, None, None
             elif self.distribution == "uniform_int":
-                return uniform_int_sampler_f(self.min, self.max), self.min, self.max, (self.max+self.min) / 2, math.sqrt(1/12*(self.max-self.min)*(self.max-self.min))
+                return make_uniform_int_sampler(self.min, self.max), self.min, self.max, (self.max+self.min) / 2, math.sqrt(1/12*(self.max-self.min)*(self.max-self.min))
 
         if self.distribution.startswith("meta"):
             self.hparams = {}
@@ -51,7 +51,7 @@ class DifferentiableHyperparameter(nn.Module):
                                     , "k": DifferentiableHyperparameter(distribution="uniform", min=self.min
                                                                                            , max=self.max, **args_passed)}
                 def make_beta(b, k):
-                    return lambda b=b, k=k: self.scale * beta_sampler_f(b, k)()
+                    return lambda b=b, k=k: self.scale * make_beta_sampler(b, k)()
                 self.sampler = lambda make_beta=make_beta : sample_meta(make_beta)
             if self.distribution == "meta_gamma":
                 ## Truncated normal where std and mean are drawn randomly logarithmically scaled
@@ -63,7 +63,7 @@ class DifferentiableHyperparameter(nn.Module):
                                     , "scale": DifferentiableHyperparameter(distribution="uniform", min=0.0
                                                                                            , max=self.max_scale, **args_passed)}
                 def make_gamma(alpha, scale):
-                    return lambda alpha=alpha, scale=scale: self.lower_bound + round(gamma_sampler_f(math.exp(alpha), scale / math.exp(alpha))()) if self.round else self.lower_bound + gamma_sampler_f(math.exp(alpha), scale / math.exp(alpha))()
+                    return lambda alpha=alpha, scale=scale: self.lower_bound + round(make_gamma_sampler(math.exp(alpha), scale / math.exp(alpha))()) if self.round else self.lower_bound + make_gamma_sampler(math.exp(alpha), scale / math.exp(alpha))()
                 self.sampler = lambda make_gamma=make_gamma : sample_meta(make_gamma)
             elif self.distribution == "meta_trunc_norm_log_scaled":
                 # these choices are copied down below, don't change these without changing `replace_differentiable_distributions`
@@ -78,8 +78,8 @@ class DifferentiableHyperparameter(nn.Module):
                 else:
                     self.hparams = {'log_mean': lambda: (None, self.log_mean), 'log_std': lambda: (None, self.log_std)}
                 def make_trunc_norm(log_mean, log_std):
-                    return ((lambda : self.lower_bound + round(trunc_norm_sampler_f(math.exp(log_mean), math.exp(log_mean)*math.exp(log_std))())) if self.round
-                            else (lambda: self.lower_bound + trunc_norm_sampler_f(math.exp(log_mean), math.exp(log_mean)*math.exp(log_std))()))
+                        return ((lambda : self.lower_bound + round(make_trunc_norm_sampler(math.exp(log_mean), math.exp(log_mean)*math.exp(log_std))())) if self.round
+                            else (lambda: self.lower_bound + make_trunc_norm_sampler(math.exp(log_mean), math.exp(log_mean)*math.exp(log_std))()))
 
                 self.sampler = lambda make_trunc_norm=make_trunc_norm: sample_meta(make_trunc_norm)
             elif self.distribution == "meta_trunc_norm":
@@ -91,9 +91,9 @@ class DifferentiableHyperparameter(nn.Module):
                                                                                        , max=self.max_std, **args_passed)}
                 def make_trunc_norm(mean, std):
                     return ((lambda: self.lower_bound + round(
-                        trunc_norm_sampler_f(mean, std)())) if self.round
+                        make_trunc_norm_sampler(mean, std)())) if self.round
                             else (
-                        lambda make_trunc_norm=make_trunc_norm: self.lower_bound + trunc_norm_sampler_f(mean, std)()))
+                        lambda make_trunc_norm=make_trunc_norm: self.lower_bound + make_trunc_norm_sampler(mean, std)()))
                 self.sampler = lambda : sample_meta(make_trunc_norm)
             elif self.distribution == "meta_choice":
                 if hasattr(self, 'choice_1_weight'):
@@ -248,5 +248,5 @@ def get_differentiable_prior_batch(batch_size, seq_len, num_features, get_batch
                                         , packed_hyperparameters)#list(itertools.chain.from_iterable(itertools.repeat(x, batch_size_per_gp_sample) for x in packed_hyperparameters)))#torch.repeat_interleave(torch.stack(packed_hyperparameters, 0).detach(), repeats=batch_size_per_gp_sample, dim=0))
     return x, y, y_, edge_index, (packed_hyperparameters if hyperparameters.get('differentiable_hps_as_style', True) else None)
 
-DifferentiablePriorDataLoader = get_batch_to_dataloader(get_differentiable_prior_batch)
+DifferentiablePriorDataLoader = build_dataloader_from_get_batch(get_differentiable_prior_batch)
 

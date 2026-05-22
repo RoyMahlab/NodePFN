@@ -1,6 +1,6 @@
 import torch
 
-from .utils import get_batch_to_dataloader
+from .utils import build_dataloader_from_get_batch
 from isolated_prior.utils import default_device
 
 def get_batch(batch_size, seq_len, num_features, device=default_device
@@ -28,4 +28,4 @@ def get_batch(batch_size, seq_len, num_features, device=default_device
     edge_index = torch.cat(edge_index, 1).detach()
     return x, y, y_, edge_index
 
-DataLoader = get_batch_to_dataloader(get_batch)
+DataLoader = build_dataloader_from_get_batch(get_batch)

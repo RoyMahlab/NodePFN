@@ -6,7 +6,7 @@ from torch import nn
 import numpy as np
 
 from isolated_prior.utils import default_device
-from .utils import get_batch_to_dataloader
+from .utils import build_dataloader_from_get_batch
 
 class GaussianNoise(nn.Module):
     def __init__(self, std, device):
@@ -184,5 +184,5 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters, device=default
     return x, y, y
 
 
-DataLoader = get_batch_to_dataloader(get_batch)
+DataLoader = build_dataloader_from_get_batch(get_batch)
 

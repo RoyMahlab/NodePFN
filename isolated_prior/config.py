@@ -1,8 +1,7 @@
 import isolated_prior.priors as priors
 import torch
-import numpy as np
 
-uniform_int_sampler_f = lambda a, b: lambda: round(np.random.uniform(a, b))
+from isolated_prior.priors.utils import make_uniform_int_sampler
 
 
 def make_get_batch(model_proto, **extra_kwargs):
@@ -55,7 +54,7 @@ config = {
         "nan_prob_unknown_reason": 0.0,
         "nan_prob_a_reason": 0.0,
         "max_num_classes": 20,
-        "num_classes": uniform_int_sampler_f(2, 20),
+        "num_classes": make_uniform_int_sampler(2, 20),
         "noise_type": "Gaussian",
         "balanced": False,
         "normalize_to_ranking": False,
