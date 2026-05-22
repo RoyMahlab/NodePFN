@@ -2,8 +2,8 @@ import torch
 from torch import nn
 import gpytorch
 
-from .utils import get_batch_to_dataloader
-from nodepfn.utils import default_device
+from isolated_prior.priors.utils import get_batch_to_dataloader
+from isolated_prior.utils import default_device
 
 
 # We will use the simplest form of GP model, exact inference
@@ -32,8 +32,6 @@ def get_model(x, y, hyperparameters):
 @torch.no_grad()
 def get_batch(batch_size, seq_len, num_features, device=default_device, hyperparameters=None,
               equidistant_x=False, fix_x=None, **kwargs):
-    if kwargs.pop("debug_get_batch", False):
-        print("get_batch (prior): nodepfn.priors.fast_gp.get_batch")
     if isinstance(hyperparameters, (tuple, list)):
         hyperparameters = {"noise": hyperparameters[0]
             , "outputscale": hyperparameters[1]

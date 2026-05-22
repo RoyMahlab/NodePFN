@@ -3,7 +3,7 @@ from torch import nn
 import math
 
 from .utils import get_batch_to_dataloader
-from nodepfn.utils import default_device, normalize_by_used_features_f
+from isolated_prior.utils import default_device
 from .utils import trunc_norm_sampler_f, beta_sampler_f, gamma_sampler_f, uniform_sampler_f, zipf_sampler_f, scaled_beta_sampler_f, uniform_int_sampler_f
 
 
@@ -24,12 +24,6 @@ class DifferentiableHyperparameter(nn.Module):
             setattr(self, key, args[key])
 
         def get_sampler():
-            #if self.distribution == "beta":
-            #    return beta_sampler_f(self.a, self.b), 0, 1
-            #elif self.distribution == "gamma":
-            #    return gamma_sampler_f(self.a, self.b), 0, 1
-            #elif self.distribution == "beta_int":
-            #    return scaled_beta_sampler_f(self.a, self.b, self.scale, self.min), self.scale + self.min, self.min, self.a / (self.a + self.b)
             if self.distribution == "uniform":
                 if not hasattr(self, 'sample'):
                     return uniform_sampler_f(self.min, self.max), self.min, self.max, (self.max+self.min) / 2, math.sqrt(1/12*(self.max-self.min)*(self.max-self.min))
@@ -136,17 +130,11 @@ class DifferentiableHyperparameter(nn.Module):
                 else:
                     ind = None
                 return ind, x # normalize indicator to [-1, 1]
-            # def sample_standard(sampler_f, embedding):
-            #     s = torch.tensor([sampler_f()], device = self.device)
-            #     return s, embedding(s)
+            
             self.sampler_f, self.sampler_min, self.sampler_max, self.sampler_mean, self.sampler_std = get_sampler()
             self.sampler = lambda : return_two(self.sampler_f(), min=self.sampler_min, max=self.sampler_max
                                                , mean=self.sampler_mean, std=self.sampler_std)
-            # self.embedding_layer = nn.Linear(1, self.embedding_dim, device=self.device)
-            # self.embed = lambda x : self.embedding_layer(
-            #     (x - self.sampler_min) / (self.sampler_max - self.sampler_min))
-            #self.sampler = lambda : sample_standard(self.sampler_f, self.embedding)
-
+            
 
     def forward(self):
         s, s_passed = self.sampler()
@@ -170,8 +158,7 @@ class DifferentiableHyperparameterList(nn.Module):
             # Function remaps hyperparameters from [-1, 1] range to true value
             s_min, s_max, s_mean, s_std = hp_val.sampler_min, hp_val.sampler_max, hp_val.sampler_mean, hp_val.sampler_std
             sampled_hyperparameters_f.append((lambda x: (x-s_mean)/s_std, lambda y : (y * s_std)+s_mean))
-            #sampled_hyperparameters_f.append(((lambda x: ((x - s_min) / (s_max - s_min) * (2) - 1)
-            #                                  , (lambda y: ((y + 1) * (1 / 2) * (s_max - s_min) + s_min))))
+            
         for hp in self.hyperparameters:
             hp_val = self.hyperparameters[hp]
             if hasattr(hp_val, 'hparams'):
@@ -214,7 +201,6 @@ class DifferentiablePrior(torch.nn.Module):
         sampled_hyperparameters_passed, sampled_hyperparameters_indicators = self.differentiable_hyperparameters.sample_parameter_object()
 
         hyperparameters = {**self.h, **sampled_hyperparameters_passed}
-        # Third call to get_batch - nodepfn.priors.prior_bag
         x, y, y_, edge_index = self.get_batch(hyperparameters=hyperparameters, **self.args)
 
         return x, y, y_, edge_index, sampled_hyperparameters_indicators
@@ -225,8 +211,6 @@ class DifferentiablePrior(torch.nn.Module):
 def get_differentiable_prior_batch(batch_size, seq_len, num_features, get_batch
               , device=default_device, differentiable_hyperparameters={}
               , hyperparameters=None, batch_size_per_gp_sample=None, **kwargs):
-    if kwargs.pop("debug_get_batch", False):
-        print("get_batch (prior): nodepfn.priors.differentiable_prior.get_batch")
     batch_size_per_gp_sample = batch_size_per_gp_sample or (min(64, batch_size))
     num_models = batch_size // batch_size_per_gp_sample
     assert num_models * batch_size_per_gp_sample == batch_size, f'Batch size ({batch_size}) not divisible by batch_size_per_gp_sample ({batch_size_per_gp_sample})'

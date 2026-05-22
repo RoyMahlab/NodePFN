@@ -5,7 +5,7 @@ import torch
 from torch import nn
 import numpy as np
 
-from nodepfn.utils import default_device
+from isolated_prior.utils import default_device
 from .utils import get_batch_to_dataloader
 
 class GaussianNoise(nn.Module):
@@ -25,8 +25,6 @@ def causes_sampler_f(num_causes):
 
 def get_batch(batch_size, seq_len, num_features, hyperparameters, device=default_device, num_outputs=1, sampling='normal'
               , epoch=None, **kwargs):
-    if kwargs.pop("debug_get_batch", False):
-        print("get_batch (prior): nodepfn.priors.mlp.get_batch")
     if 'multiclass_type' in hyperparameters and hyperparameters['multiclass_type'] == 'multi_node':
         num_outputs = num_outputs * hyperparameters['num_classes']
 

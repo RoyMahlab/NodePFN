@@ -8,7 +8,7 @@ if __name__ == "__main__":
     device = "cpu:0"
     bptt = 1024
     bptt_extra_samples = None
-    from nodepfn.utils import get_uniform_single_eval_pos_sampler
+    from .utils import get_uniform_single_eval_pos_sampler
 
     def eval_pos_seq_len_sampler():
         single_eval_pos = get_uniform_single_eval_pos_sampler(

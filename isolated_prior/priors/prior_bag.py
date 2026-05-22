@@ -1,12 +1,10 @@
 import torch
 
 from .utils import get_batch_to_dataloader
-from nodepfn.utils import default_device
+from isolated_prior.utils import default_device
 
 def get_batch(batch_size, seq_len, num_features, device=default_device
               , hyperparameters=None, batch_size_per_gp_sample=None, **kwargs):
-    if kwargs.pop("debug_get_batch", False):
-        print("get_batch (prior): nodepfn.priors.prior_bag.get_batch")
     batch_size_per_gp_sample = batch_size_per_gp_sample or (min(64, batch_size))
     num_models = batch_size // batch_size_per_gp_sample
     assert num_models * batch_size_per_gp_sample == batch_size, f'Batch size ({batch_size}) not divisible by batch_size_per_gp_sample ({batch_size_per_gp_sample})'
@@ -21,7 +19,6 @@ def get_batch(batch_size, seq_len, num_features, device=default_device
 
     if 'verbose' in hyperparameters and hyperparameters['verbose']:
         print('PRIOR_BAG:', weights, batch_assignments)
-    # Fourth call to get_batch - nodepfn.priors.flexible_categorical
     sample = [prior_bag_priors_get_batch[int(prior_idx)](hyperparameters=hyperparameters, **args, **kwargs) for prior_idx in batch_assignments]
 
     x, y, y_, edge_index = zip(*sample)

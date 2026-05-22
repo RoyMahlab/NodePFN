@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from .utils import get_batch_to_dataloader
-from nodepfn.utils import normalize_data, nan_handling_missing_for_unknown_reason_value, nan_handling_missing_for_no_reason_value, nan_handling_missing_for_a_reason_value, to_ranking_low_mem, remove_outliers, normalize_by_used_features_f
+from isolated_prior.utils import normalize_data, nan_handling_missing_for_unknown_reason_value, nan_handling_missing_for_no_reason_value, nan_handling_missing_for_a_reason_value, to_ranking_low_mem, remove_outliers, normalize_by_used_features_f
 from .utils import randomize_classes, CategoricalActivation
 from .utils import uniform_int_sampler_f
 from .network_utils import generate_edge_index
@@ -145,7 +145,6 @@ class FlexibleCategorical(torch.nn.Module):
 
     def forward(self, batch_size):
         start = time.time()
-        # Seventh call to get_batch - nodepfn.priors.mlp
         x, y, y_ = self.get_batch(hyperparameters=self.h, **self.args_passed)
         if time_it:
             print('Flex Forward Block 1', round(time.time() - start, 3))
@@ -250,8 +249,6 @@ class FlexibleCategorical(torch.nn.Module):
 
 @torch.no_grad()
 def get_batch(batch_size, seq_len, num_features, get_batch, device, hyperparameters=None, batch_size_per_gp_sample=None, **kwargs):
-    if kwargs.pop("debug_get_batch", False):
-        print("get_batch (prior): nodepfn.priors.flexible_categorical.get_batch")
     batch_size_per_gp_sample = batch_size_per_gp_sample or (min(32, batch_size))
     num_models = batch_size // batch_size_per_gp_sample
     assert num_models > 0, f'Batch size ({batch_size}) is too small for batch_size_per_gp_sample ({batch_size_per_gp_sample})'

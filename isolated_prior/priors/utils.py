@@ -2,7 +2,7 @@ import random
 
 import torch
 
-from nodepfn.utils import set_locals_in_self
+from isolated_prior.utils import set_locals_in_self
 from .prior import PriorDataLoader
 from torch import nn
 import numpy as np
