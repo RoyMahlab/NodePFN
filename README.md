@@ -55,6 +55,26 @@ Pre-train the NodePFN model on synthetic graph priors. **This step is required o
 python -m nodepfn.pretrain --model_name test --is_baseline
 ```
 
+## Prior DataLoader (Isolated)
+
+To build the same prior `DataLoader` used in training inside a standalone, self-contained directory, use:
+
+```bash
+PYTHONPATH=$PWD /home/roymahlab/miniconda3/envs/nodepfn/bin/python -m isolated_prior.scripts.priordataloader_isolated \
+    --prior gp \
+    --extra_prior_kwargs_dict num_features=1
+```
+
+To compare the isolated loader against the one in `nodepfn/train.py`:
+
+```bash
+PYTHONPATH=$PWD /home/roymahlab/miniconda3/envs/nodepfn/bin/python scripts/compare_prior_dataloaders.py \
+    --prior gp \
+    --extra_prior_kwargs_dict num_features=1
+```
+
+The isolated script mirrors the defaults from `nodepfn/train.py` and exposes the same key hyperparameters.
+
 > A pre-trained checkpoint is also available for download. See [Releases](models_ckpts/nodepfn/checkpoint_epoch_30.ckpt).
 
 

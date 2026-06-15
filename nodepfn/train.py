@@ -50,7 +50,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             return single_eval_pos, bptt
     if prompt_embeddings is not None:
         extra_prior_kwargs_dict = {**extra_prior_kwargs_dict, 'prompt_embeddings': prompt_embeddings}
-    dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
+    print('Prior dataloader class:', priordataloader_class)
+    
+    dl = priordataloader_class(num_steps=steps_per_epoch, 
+                               batch_size=batch_size, 
+                               eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, 
+                               seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0),
+                                 device=device, 
+                                 **extra_prior_kwargs_dict)
 
     encoder = encoder_generator(dl.num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
