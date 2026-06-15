@@ -25,26 +25,12 @@ Official implementation of **NodePFN**, accepted at **ICLR 2026**.
 
 **Requirements:** Python 3.11, CUDA 12.1, NVIDIA GPU (tested on RTX 6000 / A6000)
  
-- **Option 1**: `requirements.txt`
- 
 ```bash
-git clone https://github.com/jeongwhanchoi/NodePFN.git
+git clone https://github.com/roymahlab/NodePFN.git
 cd NodePFN
-pip install -r requirements.txt
-```
- 
-- **Option 2**: Manual installation of core dependencies
- 
-```bash
-git clone https://github.com/jeongwhanchoi/NodePFN.git
-cd NodePFN
- 
-pip install torch==1.12.1+cu121 --extra-index-url https://download.pytorch.org/whl/cu121
-pip install torch_geometric==2.3.1
-pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \
-    -f https://data.pyg.org/whl/torch-2.2.0+cu121.html
-pip install numpy==1.26.4 networkx==3.3 scikit-learn==1.4.0
-# Note: The above packages list only includes the core dependencies. Additional packages may be required for pre-training or specific datasets, but the above should suffice for inference on standard benchmarks.
+pip install uv
+uv venv
+uv sync
 ```
 
 ---
