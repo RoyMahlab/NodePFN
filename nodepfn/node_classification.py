@@ -190,11 +190,39 @@ def run_experiments(args):
     print("\n================ Summary ================")
     print(f"Validation Accuracy: {np.mean(valid_accuracies)*100:.2f} ± {np.std(valid_accuracies)*100:.2f}")
     print(f"Test Accuracy: {np.mean(test_accuracies)*100:.2f} ± {np.std(test_accuracies)*100:.2f}")
-    if all(v is not None for v in valid_roc_aucs):
+    have_valid_roc = all(v is not None for v in valid_roc_aucs)
+    have_test_roc = all(v is not None for v in test_roc_aucs)
+    if have_valid_roc:
         print(f"Validation ROC AUC: {np.mean(valid_roc_aucs)*100:.2f} ± {np.std(valid_roc_aucs)*100:.2f}")
-    if all(v is not None for v in test_roc_aucs):
+    if have_test_roc:
         print(f"Test ROC AUC: {np.mean(test_roc_aucs)*100:.2f} ± {np.std(test_roc_aucs)*100:.2f}")
     print(f"Fit time (mean ± std): {np.mean(fit_times):.2f} ± {np.std(fit_times):.2f} sec")
+
+    results = {
+        'dataset': args.dataset,
+        'runs': args.runs,
+        'valid_acc_mean': float(np.mean(valid_accuracies)),
+        'valid_acc_std': float(np.std(valid_accuracies)),
+        'test_acc_mean': float(np.mean(test_accuracies)),
+        'test_acc_std': float(np.std(test_accuracies)),
+        'valid_rocauc_mean': float(np.mean(valid_roc_aucs)) if have_valid_roc else None,
+        'valid_rocauc_std': float(np.std(valid_roc_aucs)) if have_valid_roc else None,
+        'test_rocauc_mean': float(np.mean(test_roc_aucs)) if have_test_roc else None,
+        'test_rocauc_std': float(np.std(test_roc_aucs)) if have_test_roc else None,
+        'fit_time_mean': float(np.mean(fit_times)),
+        'fit_time_std': float(np.std(fit_times)),
+        'config': {
+            'dim_reduction': args.dim_reduction,
+            'n_components': args.n_components,
+            'svd_algorithm': args.svd_algorithm,
+            'smoothing_steps': args.smoothing_steps,
+            'n_ensemble': args.n_ensemble,
+            'label_num_per_class': args.label_num_per_class,
+            'base_model_path': args.base_model_path,
+            'cpu': args.cpu,
+        },
+    }
+    return results
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='NodePFN Test for Node Classification')
@@ -238,9 +266,17 @@ if __name__ == "__main__":
                         choices=['arpack', 'randomized'])
     parser.add_argument('--smoothing_steps', type=int, default=0, 
                        help='Number of smoothing steps for feature smoothing')
-    parser.add_argument('--n_ensemble', type=int, default=32, 
+    parser.add_argument('--n_ensemble', type=int, default=32,
                        help='Number of ensemble configurations for NodePFN')
+    parser.add_argument('--results_json', type=str, default=None,
+                       help='If set, write the summary results dict as JSON to this path')
     args = parser.parse_args()
     print(f"Testing NodePFN on {args.dataset} dataset")
 
-    run_experiments(args)
+    results = run_experiments(args)
+
+    if args.results_json is not None:
+        import json
+        with open(args.results_json, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Wrote results to {args.results_json}")
