@@ -14,6 +14,10 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--model_name', type=str, default='pfn')
 parser.add_argument('--eval', action='store_true')
 parser.add_argument('--resume_epoch', type=int, default=None, help='Resume training from this epoch checkpoint')
+parser.add_argument('--wandb', action='store_true', help='Enable Weights & Biases logging')
+parser.add_argument('--wandb_project', type=str, default='NodePFN', help='wandb project name')
+parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity (team/user)')
+parser.add_argument('--wandb_run_name', type=str, default=None, help='wandb run name')
 
 args = parser.parse_args()
 
@@ -173,6 +177,11 @@ if __name__ == "__main__":
     config['max_num_classes'] = 20
 
     config['pos_encoder'] = 'none'
+
+    config['use_wandb'] = args.wandb
+    config['wandb_project'] = args.wandb_project
+    config['wandb_entity'] = args.wandb_entity
+    config['wandb_run_name'] = args.wandb_run_name if args.wandb_run_name is not None else model_name
 
     config_sample = evaluate_hypers(config)
 

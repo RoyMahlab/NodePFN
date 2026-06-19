@@ -9,3 +9,6 @@ __pycache__
 
 # data
 data/
+wandb/
+nodepfn.egg-info/
+models_ckpts/

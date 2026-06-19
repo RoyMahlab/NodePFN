@@ -329,6 +329,10 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
         }
                   , lr=config['lr']
                   , verbose=verbose_train,
-                  weight_decay=config.get('weight_decay', 0.0))
+                  weight_decay=config.get('weight_decay', 0.0)
+                  , use_wandb=config.get('use_wandb', False)
+                  , wandb_project=config.get('wandb_project', 'NodePFN')
+                  , wandb_entity=config.get('wandb_entity', None)
+                  , wandb_run_name=config.get('wandb_run_name', None))
 
     return model

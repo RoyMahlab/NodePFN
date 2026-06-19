@@ -19,6 +19,11 @@ from torch.cuda.amp import autocast, GradScaler
 from torch import nn
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 class Losses():
     gaussian = nn.GaussianNLLLoss(full=True, reduction='none')
     mse = nn.MSELoss(reduction='none')
@@ -34,7 +39,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
           y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
           load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
           aggregate_k_gradients=1, verbose=True, style_encoder_generator=None, epoch_callback=None,
-          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, **model_extra_args
+          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True,
+          use_wandb=False, wandb_project='NodePFN', wandb_entity=None, wandb_run_name=None, wandb_config=None,
+          wandb_log_interval=50,
+          **model_extra_args
           ):
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
@@ -99,7 +107,26 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     # check that everything uses up-to-date APIs
     utils.check_compatibility(dl)
 
-    def train_epoch():
+    # Weights & Biases logging (only on the main process)
+    wandb_run = None
+    if use_wandb and rank == 0:
+        if wandb is None:
+            print("wandb logging requested but the `wandb` package is not installed. "
+                  "Install it with `pip install wandb` to enable logging. Continuing without it.")
+        else:
+            run_config = dict(wandb_config) if wandb_config else {}
+            run_config.update(dict(
+                emsize=emsize, nhid=nhid, nlayers=nlayers, nhead=nhead, dropout=dropout,
+                epochs=epochs, steps_per_epoch=steps_per_epoch, batch_size=batch_size,
+                bptt=bptt, lr=lr, weight_decay=weight_decay, warmup_epochs=warmup_epochs,
+                aggregate_k_gradients=aggregate_k_gradients,
+                train_mixed_precision=train_mixed_precision,
+                num_parameters=sum(p.numel() for p in model.parameters()),
+            ))
+            wandb_run = wandb.init(project=wandb_project, entity=wandb_entity,
+                                   name=wandb_run_name, config=run_config)
+
+    def train_epoch(epoch):
         model.train()  # Turn on the train mode
         total_loss = 0.
         total_positional_losses = 0.
@@ -176,6 +203,17 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 nan_steps += nan_share
                 ignore_steps += (targets == -100).float().mean()
 
+                if wandb_run is not None and batch % wandb_log_interval == 0:
+                    global_step = (epoch - 1) * len(dl) + batch
+                    wandb_run.log({
+                        'train/step_loss': losses.mean().cpu().detach().item(),
+                        'train/learning_rate': scheduler.get_last_lr()[0],
+                        'train/nan_share': nan_share,
+                        'time/data_s': time_to_get_batch,
+                        'time/step_s': step_time,
+                        'time/forward_s': forward_time,
+                        'epoch': epoch,
+                    }, step=global_step)
 
             before_get_batch = time.time()
         return total_loss / steps_per_epoch, (total_positional_losses / total_positional_losses_recorded).tolist(),\
@@ -188,7 +226,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         for epoch in tqdm(range(1, epochs + 1) if epochs is not None else itertools.count(1), desc="Training epochs"):
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
-                train_epoch()
+                train_epoch(epoch)
             if hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
@@ -205,11 +243,27 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     + (f'val score {val_score}' if val_score is not None else ''))
                 print('-' * 89)
 
+            if wandb_run is not None:
+                log_dict = {
+                    'epoch': epoch,
+                    'train/epoch_loss': total_loss,
+                    'train/learning_rate': scheduler.get_last_lr()[0],
+                    'train/nan_share': nan_share,
+                    'train/ignore_share': ignore_share,
+                    'time/epoch_s': time.time() - epoch_start_time,
+                }
+                if val_score is not None:
+                    log_dict['val/score'] = val_score
+                wandb_run.log(log_dict, step=epoch * len(dl))
+
             if epoch_callback is not None and rank == 0:
                 epoch_callback(model, epoch, epochs)
             scheduler.step()
     except KeyboardInterrupt:
         pass
+    finally:
+        if wandb_run is not None:
+            wandb_run.finish()
 
     if rank == 0: # trivially true for non-parallel training
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
