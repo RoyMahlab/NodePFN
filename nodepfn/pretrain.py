@@ -18,6 +18,16 @@ parser.add_argument('--wandb', action='store_true', help='Enable Weights & Biase
 parser.add_argument('--wandb_project', type=str, default='NodePFN', help='wandb project name')
 parser.add_argument('--wandb_entity', type=str, default=None, help='wandb entity (team/user)')
 parser.add_argument('--wandb_run_name', type=str, default=None, help='wandb run name')
+# Speed/throughput overrides (default None => use the hard-coded config values).
+parser.add_argument('--epochs', type=int, default=None, help='override number of epochs')
+parser.add_argument('--num_steps', type=int, default=None, help='override optimizer steps per epoch')
+parser.add_argument('--batch_size', type=int, default=None, help='override (nominal) batch size')
+parser.add_argument('--aggregate_k_gradients', type=int, default=None,
+                    help='override gradient accumulation; 1 means a full real batch per step')
+parser.add_argument('--recompute_attn', dest='recompute_attn', action='store_true', default=None,
+                    help='enable attention gradient checkpointing (slower, less memory)')
+parser.add_argument('--no_recompute_attn', dest='recompute_attn', action='store_false',
+                    help='disable attention gradient checkpointing (faster, more memory)')
 
 args = parser.parse_args()
 
@@ -61,8 +71,7 @@ def train_function(config_sample, add_name='', resume_epoch=None):
     N_epochs_to_save = 10
     maximum_runtime = 30
     save_dir = os.path.join(base_path, f'models_ckpts/{add_name}')
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    os.makedirs(save_dir, exist_ok=True)  # exist_ok avoids a race between DDP ranks
 
     # If resuming, load checkpoint
     state_dict = None
@@ -107,7 +116,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     model_string = ''
     
     config['epochs'] = 20
-    config['recompute_attn'] = True
+    config['recompute_attn'] = False  # gradient checkpointing off: faster backward, uses more memory
 
     config['max_features'] = max_features
     config['max_num_classes'] = 20
@@ -163,7 +172,7 @@ if __name__ == "__main__":
     config['canonical_y_encoder'] = False
 
         
-    config['aggregate_k_gradients'] = 8
+    config['aggregate_k_gradients'] = 1  # was 8: real micro-batch == batch_size (no bs=1 pathology)
     config['batch_size'] = 8 # 64*config['aggregate_k_gradients']
     config['batch_size'] = 8 #  262144  # 64*config['aggregate_k_gradients']
     config['num_steps'] = 1024 # //config['aggregate_k_gradients']
@@ -182,6 +191,21 @@ if __name__ == "__main__":
     config['wandb_project'] = args.wandb_project
     config['wandb_entity'] = args.wandb_entity
     config['wandb_run_name'] = args.wandb_run_name if args.wandb_run_name is not None else model_name
+
+    # Optional command-line overrides for speed/throughput experiments.
+    if args.epochs is not None:
+        config['epochs'] = args.epochs
+    if args.num_steps is not None:
+        config['num_steps'] = args.num_steps
+    if args.batch_size is not None:
+        config['batch_size'] = args.batch_size
+    if args.aggregate_k_gradients is not None:
+        config['aggregate_k_gradients'] = args.aggregate_k_gradients
+    if args.recompute_attn is not None:
+        config['recompute_attn'] = args.recompute_attn
+    print(f"[pretrain] epochs={config['epochs']} num_steps={config['num_steps']} "
+          f"batch_size={config['batch_size']} aggregate_k_gradients={config['aggregate_k_gradients']} "
+          f"recompute_attn={config['recompute_attn']}")
 
     config_sample = evaluate_hypers(config)
 

@@ -91,7 +91,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     model.to(device)
     if using_dist:
         print("Distributed training")
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], output_device=rank, broadcast_buffers=False)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], output_device=rank, broadcast_buffers=False, find_unused_parameters=True)
     dl.model = model
 
 

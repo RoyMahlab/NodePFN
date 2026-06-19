@@ -52,6 +52,16 @@ def main():
                         help='wandb run name (default: model_name)')
     parser.add_argument('--resume_epoch', type=int, default=None,
                         help='resume pretraining from this epoch checkpoint')
+    parser.add_argument('--gpus', type=int, default=1,
+                        help='number of GPUs for pretraining; >1 launches via torchrun (DDP)')
+    parser.add_argument('--epochs', type=int, default=None,
+                        help='override pretrain epochs (work-reduction lever)')
+    parser.add_argument('--num_steps', type=int, default=None,
+                        help='override optimizer steps per epoch (work-reduction lever)')
+    parser.add_argument('--batch_size', type=int, default=None,
+                        help='override pretrain batch size')
+    parser.add_argument('--aggregate_k_gradients', type=int, default=None,
+                        help='override gradient accumulation (1 = full real batch per step)')
     parser.add_argument('--base_model_path', default=None,
                         help='model dir the baselines evaluate '
                              '(default: models_ckpts/<model_name>, i.e. the model just trained)')
@@ -78,15 +88,26 @@ def main():
 
     # --- stage 1: pretrain, pinning the wandb run id via env ---
     if not args.skip_pretrain:
-        pre_cmd = [sys.executable, '-m', 'nodepfn.pretrain',
-                   '--model_name', args.model_name,
-                   '--wandb',
-                   '--wandb_project', args.wandb_project,
-                   '--wandb_run_name', run_name]
+        # launcher: single process, or torchrun across N GPUs (DDP)
+        if args.gpus > 1:
+            launcher = [sys.executable, '-m', 'torch.distributed.run',
+                        '--nproc_per_node', str(args.gpus), '--master_port', '29501']
+        else:
+            launcher = [sys.executable]
+        pre_cmd = launcher + ['-m', 'nodepfn.pretrain',
+                              '--model_name', args.model_name,
+                              '--wandb',
+                              '--wandb_project', args.wandb_project,
+                              '--wandb_run_name', run_name]
         if args.wandb_entity:
             pre_cmd += ['--wandb_entity', args.wandb_entity]
         if args.resume_epoch is not None:
             pre_cmd += ['--resume_epoch', str(args.resume_epoch)]
+        for flag, val in (('--epochs', args.epochs), ('--num_steps', args.num_steps),
+                          ('--batch_size', args.batch_size),
+                          ('--aggregate_k_gradients', args.aggregate_k_gradients)):
+            if val is not None:
+                pre_cmd += [flag, str(val)]
         pre_env = base_env()
         pre_env['WANDB_RUN_ID'] = run_id
         run(pre_cmd, pre_env)
