@@ -12,6 +12,12 @@ import os
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--model_name', type=str, default='pfn')
+parser.add_argument('--prior', type=str, default='geo', choices=['geo', 'causal'],
+                    help="graph prior: 'geo' = casual_graph_generation similarity prior, "
+                         "'causal' = original MLP + SBM/random prior bag")
+parser.add_argument('--geo_similarity', type=str, default=None,
+                    choices=['cosine', 'bilinear', 'mlp'],
+                    help='pin the geo prior similarity kernel (default: sample it per graph)')
 parser.add_argument('--eval', action='store_true')
 parser.add_argument('--resume_epoch', type=int, default=None, help='Resume training from this epoch checkpoint')
 parser.add_argument('--wandb', action='store_true', help='Enable Weights & Biases logging')
@@ -206,6 +212,16 @@ if __name__ == "__main__":
     print(f"[pretrain] epochs={config['epochs']} num_steps={config['num_steps']} "
           f"batch_size={config['batch_size']} aggregate_k_gradients={config['aggregate_k_gradients']} "
           f"recompute_attn={config['recompute_attn']}")
+
+    # Select the graph prior. 'geo' replaces the MLP + SBM/random prior bag with the
+    # casual_graph_generation similarity prior (features, labels and topology from one SCM).
+    if args.prior == 'geo':
+        config['prior_type'] = 'geo_similarity'
+        config['differentiable'] = False   # geo samples its own hyperparameters internally
+        config['flexible'] = False         # geo does its own normalisation / label handling
+        if args.geo_similarity is not None:
+            config['geo_fixed_hparams'] = {'similarity': args.geo_similarity}
+    print(f"[pretrain] prior={args.prior} prior_type={config['prior_type']}")
 
     config_sample = evaluate_hypers(config)
 

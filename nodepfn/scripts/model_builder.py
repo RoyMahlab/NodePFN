@@ -213,8 +213,20 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                 , hyperparameters=hyperparameters
                 , num_features=num_features, **kwargs)
         return new_get_batch
-
-    if config['prior_type'] == 'prior_bag':
+    
+    if config['prior_type'] == 'geo_similarity':
+        # Geometric-similarity causal prior: features, labels and topology are all generated
+        # jointly by casual_graph_generation, so the flexible/differentiable/prior_bag
+        # wrappers (and generate_edge_index) are bypassed.
+        prior_hyperparameters = {
+            'num_features': config['num_features'],
+            'max_num_classes': config['max_num_classes'],
+            'rotate_normalized_labels': config.get('rotate_normalized_labels', True),
+            'geo_fixed_hparams': config.get('geo_fixed_hparams', {}),
+            'verbose': config.get('verbose', False),
+        }
+        model_proto = priors.geo_similarity
+    elif config['prior_type'] == 'prior_bag':
         # Prior bag combines priors
         get_batch_gp = make_get_batch(priors.fast_gp)
         get_batch_mlp = make_get_batch(priors.mlp)

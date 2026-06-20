@@ -34,7 +34,18 @@ pip install uv
 uv venv
 uv sync
 ```
- 
+
+---
+## Pre-training and node classification
+This script starts an optimized pretraining, runs node classification on at least 10 datasets (gpu size dependent) and logs everything to wandb.
+Note; [`--prior`] argument determines the graph generation method where geo uses the CausalGraphGenerator class where features, labels and structures are derived from the same SCM. [`--geo_similarity`] defines the function for edge creation.
+[`--model_name`] will also determine the name of the wandb run.
+```bash
+python pretrain_and_node_classification.py --model_name {your_model_name} --gpus 2 --num_steps 200 --batch_size 1 --prior geo --geo_similarity cosine
+```
+
+
+
 ---
 ## Pre-training
 Pre-train the NodePFN model on synthetic graph priors. **This step is required only once** — the resulting checkpoint can then be used for inference on arbitrary graphs.

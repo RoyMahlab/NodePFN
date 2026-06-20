@@ -46,13 +46,19 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--model_name', required=True,
                         help='pretrain model name (checkpoints -> models_ckpts/<name>/)')
+    parser.add_argument('--prior', type=str, default='geo', choices=['geo', 'causal'],
+                        help="graph prior to pretrain on: 'geo' = casual_graph_generation "
+                             "similarity prior, 'causal' = original MLP + SBM/random prior bag")
+    parser.add_argument('--geo_similarity', type=str, default=None,
+                        choices=['cosine', 'bilinear', 'mlp'],
+                        help='pin the geo prior similarity kernel (default: sample it per graph)')
     parser.add_argument('--wandb_project', default='NodePFN')
     parser.add_argument('--wandb_entity', default=None)
     parser.add_argument('--wandb_run_name', default=None,
                         help='wandb run name (default: model_name)')
     parser.add_argument('--resume_epoch', type=int, default=None,
                         help='resume pretraining from this epoch checkpoint')
-    parser.add_argument('--gpus', type=int, default=1,
+    parser.add_argument('--gpus', type=int, default=2,
                         help='number of GPUs for pretraining; >1 launches via torchrun (DDP)')
     parser.add_argument('--epochs', type=int, default=None,
                         help='override pretrain epochs (work-reduction lever)')
@@ -96,9 +102,12 @@ def main():
             launcher = [sys.executable]
         pre_cmd = launcher + ['-m', 'nodepfn.pretrain',
                               '--model_name', args.model_name,
+                              '--prior', args.prior,
                               '--wandb',
                               '--wandb_project', args.wandb_project,
                               '--wandb_run_name', run_name]
+        if args.geo_similarity is not None:
+            pre_cmd += ['--geo_similarity', args.geo_similarity]
         if args.wandb_entity:
             pre_cmd += ['--wandb_entity', args.wandb_entity]
         if args.resume_epoch is not None:
