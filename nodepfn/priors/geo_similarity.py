@@ -65,17 +65,40 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     # classes would push targets out of bounds. sample_config draws n_classes up to 20;
     # cap it at the head width (n_classes does not affect GraphConfig.is_valid()).
     max_num_classes = hyperparameters.get('max_num_classes')
+    # Topology-safe analogue of flexible_categorical's check_is_compatible: ensure the
+    # context split [:single_eval_pos] and the query split [single_eval_pos:] expose the
+    # same (>1) classes, so every queried class has in-context evidence. We cannot permute
+    # nodes to fix a bad split (the SCM topology in edge_index is tied to node positions and
+    # is shared across the batch), so we regenerate the whole graph instead. Off by default.
+    
+    # check_compat = hyperparameters.get('check_is_compatible', False) and single_eval_pos
+    check_compat = True
+    max_retries = int(hyperparameters.get('compatible_max_retries', 10))
 
-    # Seed the hyperparameter stream from the (globally seeded) torch RNG so the run honours
-    # set_seed while still varying graph-to-graph. The graph internals use torch/np globals.
-    seed = int(torch.randint(0, 2 ** 31 - 1, (1,)).item())
-    rng = np.random.default_rng(seed)
+    def _is_compatible(y_raw):
+        train_classes = torch.unique(y_raw[:single_eval_pos])
+        eval_classes = torch.unique(y_raw[single_eval_pos:])
+        return (train_classes.numel() > 1
+                and train_classes.numel() == eval_classes.numel()
+                and bool((train_classes == eval_classes).all()))
 
-    # One consistent graph with exactly seq_len nodes.
-    cfg = sample_config(rng=rng, n_nodes=int(seq_len), **fixed)
-    if max_num_classes is not None:
-        cfg.n_classes = min(cfg.n_classes, int(max_num_classes))
-    data = CausalGraphGenerator(cfg).generate()
+    # One consistent graph with exactly seq_len nodes. Seed the hyperparameter stream from
+    # the (globally seeded) torch RNG so the run honours set_seed while still varying
+    # graph-to-graph; the graph internals use the torch/np globals.
+    cfg = data = None
+    for _ in range(max_retries if check_compat else 1):
+        seed = int(torch.randint(0, 2 ** 31 - 1, (1,)).item())
+        rng = np.random.default_rng(seed)
+        cfg = sample_config(rng=rng, n_nodes=int(seq_len), **fixed)
+        if max_num_classes is not None:
+            cfg.n_classes = min(cfg.n_classes, int(max_num_classes))
+        data = CausalGraphGenerator(cfg).generate()
+        if not check_compat or _is_compatible(data['y']):
+            break
+    else:
+        if hyperparameters.get('verbose'):
+            print(f'[geo_similarity] no compatible split after {max_retries} draws; '
+                  f'accepting last graph (single_eval_pos={single_eval_pos}).')
 
     X = data['X'].to(device).float()        # (T, n_feat)
     y = data['y'].to(device).long()         # (T,)

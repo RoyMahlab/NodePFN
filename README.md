@@ -32,6 +32,7 @@ git clone https://github.com/jeongwhanchoi/NodePFN.git
 cd NodePFN
 pip install uv
 uv venv
+source .venv/bin/activate
 uv sync
 ```
 

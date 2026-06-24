@@ -11,15 +11,15 @@ hyperparameter space the model is pretrained on:
     n_geo                     get_diff_causal: num_causes                 meta_gamma(max_alpha=3, max_scale=7,  lb=2)
     drop_rate                 get_diff_causal: prior_mlp_dropout_prob     meta_beta(scale=0.6, min=0.1, max=5.0)
     n_features                flexible_categorical: num_features_used     uniform_int(1, max_features=100)
-    n_classes                 flexible_categorical: num_classes           constant = NUM_CLASSES (= max_num_classes = 10)
+    n_classes                 pretrain.py: num_classes                    uniform_int(2, max_num_classes=20)
 
-``n_classes`` is FIXED, not sampled: nodepfn's active config sets ``num_classes = 10`` (==
-``max_num_classes``, the model's head width) and ``MulticlassRank(num_classes)`` discretises
-the target into up to that many bins — the number of distinct classes actually present then
-varies per dataset (empty bins). We mirror that: a constant ``n_classes`` fed to the SCM's
-``discretise_labels``. (nodepfn's commented-out alternative was ``randint(2, 10)``; switch
-``N_CLASSES_DIST`` below to ``{'distribution': 'uniform_int', 'min': 2, 'max': NUM_CLASSES}``
-to reproduce that instead.)
+``n_classes`` is sampled per dataset: nodepfn's active pretraining config
+(``pretrain.py``) sets ``max_num_classes = 20`` (the model's head width) and
+``num_classes = uniform_int_sampler_f(2, max_num_classes)``, i.e. a fresh
+``round(U(2, 20))`` per dataset. ``MulticlassRank(num_classes)`` then discretises the
+target into up to that many bins — the number of distinct classes actually present can
+be fewer (empty bins). We mirror that draw and feed the result to the SCM's
+``discretise_labels``. (Pin ``N_CLASSES_DIST`` to a constant below to fix the count.)
 
 The meta-distribution samplers below reproduce those in
 ``nodepfn/priors/differentiable_prior.py`` (hierarchical: first draw the meta-parameters
@@ -55,12 +55,12 @@ SLIDER_RANGES = {
 #     get_flexible_categorical_config). These are NOT sampled in nodepfn; they bound the
 #     sampled fields and fix the head width, so we mirror their exact values here. ---
 MAX_FEATURES = 100      # get_general_config: max_features (upper bound of num_features_used)
-MAX_NUM_CLASSES = 10    # get_flexible_categorical_config: max_num_classes (model head width)
-NUM_CLASSES = 10        # get_flexible_categorical_config: num_classes (fixed; == max_num_classes)
+MAX_NUM_CLASSES = 20    # pretrain.py: max_num_classes (model head width)
+MIN_NUM_CLASSES = 2     # pretrain.py: num_classes lower bound (uniform_int_sampler_f(2, max_num_classes))
 
-# Swap to {'distribution': 'uniform_int', 'min': 2, 'max': NUM_CLASSES} to reproduce
-# nodepfn's commented-out per-dataset class sampling instead of the active fixed value.
-N_CLASSES_DIST = {'distribution': 'constant', 'value': NUM_CLASSES}
+# nodepfn's active config draws num_classes = round(U(2, max_num_classes)) per dataset.
+# Swap to {'distribution': 'constant', 'value': <k>} to pin the class count instead.
+N_CLASSES_DIST = {'distribution': 'uniform_int', 'min': MIN_NUM_CLASSES, 'max': MAX_NUM_CLASSES}
 
 # --- Distributions copied verbatim from nodepfn (model_configs.get_diff_causal /
 #     flexible_categorical / pretrain.py). Field names are the casual_graph_generation ones. ---
@@ -70,7 +70,7 @@ PRIOR_DISTRIBUTIONS = {
     'n_geo':      {'distribution': 'meta_gamma', 'max_alpha': 3, 'max_scale': 7,   'lower_bound': 2, 'round': True},  # num_causes
     'drop_rate':  {'distribution': 'meta_beta',  'scale': 0.6, 'min': 0.1, 'max': 5.0},                               # prior_mlp_dropout_prob
     'n_features': {'distribution': 'uniform_int', 'min': 1, 'max': MAX_FEATURES},                                     # num_features_used (max_features)
-    'n_classes':  N_CLASSES_DIST,                                                                                     # num_classes (fixed at max_num_classes)
+    'n_classes':  N_CLASSES_DIST,                                                                                     # num_classes = uniform_int(2, max_num_classes)
 }
 
 
@@ -152,7 +152,7 @@ def sample_config(rng=None, seed: int | None = None, max_tries: int = 10_000, **
             n_features    = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_features']),
             n_classes     = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_classes']),
             # --- geometric-similarity-only fields (cell [23] dashboard ranges) ---
-            n_nodes       = _stepped_int(rng, *SLIDER_RANGES['n_nodes']),
+            n_nodes       = 1024,
             similarity    = str(rng.choice(SIMILARITY_CHOICES)),
             sim_threshold = float(rng.uniform(-1.0, 1.0)),
             normalize     = str(rng.choice(FRAME_CHOICES)),
