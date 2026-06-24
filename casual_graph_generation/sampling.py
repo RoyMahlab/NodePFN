@@ -70,6 +70,7 @@ PRIOR_DISTRIBUTIONS = {
     'n_geo':      {'distribution': 'meta_gamma', 'max_alpha': 3, 'max_scale': 7,   'lower_bound': 2, 'round': True},  # num_causes
     'drop_rate':  {'distribution': 'meta_beta',  'scale': 0.6, 'min': 0.1, 'max': 5.0},                               # prior_mlp_dropout_prob
     'n_features': {'distribution': 'uniform_int', 'min': 1, 'max': MAX_FEATURES},                                     # num_features_used (max_features)
+    'n_nodes':    {'distribution': 'constant', 'value': 1024},                                                            # seq_len
     'n_classes':  N_CLASSES_DIST,                                                                                     # num_classes = uniform_int(2, max_num_classes)
 }
 
@@ -152,7 +153,7 @@ def sample_config(rng=None, seed: int | None = None, max_tries: int = 10_000, **
             n_features    = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_features']),
             n_classes     = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_classes']),
             # --- geometric-similarity-only fields (cell [23] dashboard ranges) ---
-            n_nodes       = 1024,
+            n_nodes       = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_nodes']),
             similarity    = str(rng.choice(SIMILARITY_CHOICES)),
             sim_threshold = float(rng.uniform(-1.0, 1.0)),
             normalize     = str(rng.choice(FRAME_CHOICES)),
