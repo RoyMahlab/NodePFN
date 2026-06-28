@@ -1,4 +1,5 @@
 import os, json
+import importlib.util
 import numpy as np
 import pandas as pd
 import torch
@@ -286,7 +287,52 @@ def load_pokec_mat(data_dir):
     return dataset
 
 # -------------------- dispatcher --------------------
+# -------------------- GraphLand --------------------
+# GraphLand lives at this repo path and is NOT a package; its module is also
+# named dataset.py, so we load it by file under a distinct name to avoid
+# colliding with this module. It resolves its own data dir via __file__.
+_GRAPHLAND_ROOT = '/gfs/shared/public/datasets/graphland'
+_GRAPHLAND_CANON = [
+    'hm-categories', 'hm-prices', 'avazu-ctr', 'tolokers-2', 'artnet-views', 'artnet-exp',
+    'twitch-views', 'city-roads-M', 'city-roads-L', 'city-reviews', 'pokec-regions',
+    'web-fraud', 'web-traffic', 'web-topics',
+]
+_GRAPHLAND_MAP = {n.lower(): n for n in _GRAPHLAND_CANON}
+_graphland_pygdataset = None
+
+
+def _get_graphland_pygdataset():
+    global _graphland_pygdataset
+    if _graphland_pygdataset is None:
+        path = os.path.join(_GRAPHLAND_ROOT, 'dataset.py')
+        spec = importlib.util.spec_from_file_location('graphland_dataset', path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _graphland_pygdataset = mod.PyGDataset
+    return _graphland_pygdataset
+
+
+def load_graphland(data_dir, name, split='RL'):
+    if split.upper() == 'THI':
+        raise NotImplementedError("GraphLand inductive split 'THI' returns 3 graphs; "
+                                  "only transductive splits (RL/RH/TH) are supported here.")
+    PyGDataset = _get_graphland_pygdataset()
+    pygds = PyGDataset(name=name, split=split.upper())
+    ds = wrap_tg_dataset(name, pygds[0])  # transductive -> single Data
+    # Datasets with unlabeled nodes return float labels containing NaN. For
+    # classification, make labels integer class ids with -1 for unlabeled nodes
+    # (those are excluded from every split mask, so -1 is never scored).
+    if 'classification' in pygds.task and torch.is_floating_point(ds.label):
+        y = ds.label
+        ds.label = torch.where(torch.isnan(y), torch.full_like(y, -1), y).to(torch.int64)
+    return ds
+
+
 def load_dataset(data_dir, name):
+    # GraphLand datasets, optionally with a split suffix "name:SPLIT" (default RL).
+    gl_name, _, gl_split = name.partition(':')
+    if gl_name.lower() in _GRAPHLAND_MAP:
+        return load_graphland(data_dir, _GRAPHLAND_MAP[gl_name.lower()], gl_split or 'RL')
     name = name.lower()
     if name in ('cora', 'citeseer', 'pubmed'):
         return load_planetoid(data_dir, name)

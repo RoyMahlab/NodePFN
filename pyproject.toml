@@ -13,7 +13,7 @@ dependencies = [
     # ==================================================================
     "numpy==1.26.4",
     "scipy==1.17.1",
-    "scikit-learn==1.4.0",
+    "scikit-learn==1.5",
     "pandas==2.2.3",
     "Cython==3.2.4",
     "ConfigSpace==0.4.21",
@@ -79,6 +79,7 @@ dependencies = [
     "joblib==1.5.3",
     "outdated==0.2.2",
     "ipywidgets>=8.1.8",
+    "kagglehub>=1.0.2",
 ]
 
 [tool.setuptools]

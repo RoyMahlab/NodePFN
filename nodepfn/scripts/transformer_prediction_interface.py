@@ -4,8 +4,8 @@ import pathlib
 
 from torch.utils.checkpoint import checkpoint
 
-from utils import normalize_data, to_ranking_low_mem, remove_outliers
-from utils import NOP, normalize_by_used_features_f
+from nodepfn.utils import normalize_data, to_ranking_low_mem, remove_outliers
+from nodepfn.utils import NOP, normalize_by_used_features_f
 
 from sklearn.preprocessing import PowerTransformer, QuantileTransformer, RobustScaler
 
@@ -17,7 +17,7 @@ from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils import column_or_1d
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
-from scripts.model_builder import load_model, load_model_only_inference
+from nodepfn.scripts.model_builder import load_model, load_model_only_inference
 import os
 import pickle
 import io

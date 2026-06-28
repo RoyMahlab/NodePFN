@@ -1,11 +1,11 @@
 from functools import partial
-import encoders as encoders
+import nodepfn.encoders as encoders
 
-from transformer import TransformerModel
-from utils import get_uniform_single_eval_pos_sampler
+from nodepfn.transformer import TransformerModel
+from nodepfn.utils import get_uniform_single_eval_pos_sampler
 import torch
 import math
-import positional_encodings
+import nodepfn.positional_encodings as positional_encodings
 
 def save_model(model, path, filename, config_sample):
     config_sample = {**config_sample}
