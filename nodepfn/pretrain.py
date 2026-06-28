@@ -19,6 +19,8 @@ parser.add_argument('--geo_similarity', type=str, default=None,
                     choices=['cosine', 'bilinear', 'mlp'],
                     help='pin the geo prior similarity kernel (default: sample it per graph)')
 parser.add_argument('--eval', action='store_true')
+parser.add_argument('--seed', type=int, default=42,
+                    help='random seed for reproducible pretraining (default: 42)')
 parser.add_argument('--resume_epoch', type=int, default=None, help='Resume training from this epoch checkpoint')
 parser.add_argument('--wandb', action='store_true', help='Enable Weights & Biases logging')
 parser.add_argument('--wandb_project', type=str, default='NodePFN', help='wandb project name')
@@ -54,6 +56,7 @@ else:
 print(model_name)
 
 def set_seed(seed):
+    os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -135,7 +138,17 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     return config, model_string
 
 if __name__ == "__main__":
+    # Under DDP (torchrun) every rank runs this script; offset the seed by the
+    # global rank so each rank generates a different stream of prior batches.
+    # torchrun sets RANK; fall back to 0 for single-process runs.
+    rank = int(os.environ.get('RANK', 0))
+    rank_seed = args.seed + rank
+    set_seed(rank_seed)
+    print(f"[pretrain] seed={args.seed} rank={rank} rank_seed={rank_seed}")
+
     config, model_string = reload_config(longer=1)
+    config['seed'] = args.seed
+    config['rank_seed'] = rank_seed
 
     config['bptt_extra_samples'] = None
     config['output_multiclass_ordered_p'] = 0.

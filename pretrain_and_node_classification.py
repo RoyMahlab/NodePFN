@@ -56,6 +56,8 @@ def main():
     parser.add_argument('--wandb_entity', default=None)
     parser.add_argument('--wandb_run_name', default=None,
                         help='wandb run name (default: model_name)')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='random seed for reproducible pretraining (default: 42)')
     parser.add_argument('--resume_epoch', type=int, default=None,
                         help='resume pretraining from this epoch checkpoint')
     parser.add_argument('--gpus', type=int, default=2,
@@ -103,6 +105,7 @@ def main():
         pre_cmd = launcher + ['-m', 'nodepfn.pretrain',
                               '--model_name', args.model_name,
                               '--prior', args.prior,
+                              '--seed', str(args.seed),
                               '--wandb',
                               '--wandb_project', args.wandb_project,
                               '--wandb_run_name', run_name]
