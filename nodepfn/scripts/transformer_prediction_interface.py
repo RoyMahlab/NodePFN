@@ -108,7 +108,8 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, device='cpu', base_path=pathlib.Path(__file__).parent.parent.resolve(), model_string='',
                  N_ensemble_configurations=3, no_preprocess_mode=False, multiclass_decoder='permutation',
                  feature_shift_decoder=True, only_inference=True, seed=0, no_grad=True, batch_size_inference=32,
-                 subsample_features=False, i=0, e=0):
+                 subsample_features=False, i=0, e=0,
+                 fp16_inference=False, amp_dtype=None, pipeline_devices=None):
         """
         Initializes the classifier and loads the model. 
         Depending on the arguments, the model is either loaded from memory, from a file, or downloaded from the 
@@ -142,12 +143,19 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
         :param subsample_features: If set to true and the number of features in the dataset exceeds self.max_features (100),
                 the features are subsampled to self.max_features.
         """
-        model_key = model_string+'|'+str(device)
+        # pipeline_devices is part of the cache key: a model pipelined across GPUs
+        # has its layers spread over devices and must not be reused as a single
+        # device model (or vice-versa).
+        model_key = model_string+'|'+str(device)+'|'+str(pipeline_devices)
         if model_key in self.models_in_memory:
             model, c, results_file = self.models_in_memory[model_key]
         else:
             model, c, results_file = load_model_workflow(i, e, add_name=model_string, base_path=base_path, device=device,
                                                          eval_addition='', only_inference=only_inference)
+            if pipeline_devices is not None and len(pipeline_devices) > 1:
+                # spread the encoder layers across the given GPUs to cap per-device memory
+                model[2].distribute_layers(pipeline_devices)
+                print(f'[NodePFN] pipelined model layers across {len(pipeline_devices)} GPUs: {pipeline_devices}')
             self.models_in_memory[model_key] = (model, c, results_file)
             if len(self.models_in_memory) == 2:
                 print('Multiple models in memory. This might lead to memory issues. Consider calling remove_models_from_memory()')
@@ -178,6 +186,9 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
             "If no_grad is false, no_preprocess_mode must be true, because otherwise no gradient can be computed."
 
         self.batch_size_inference = batch_size_inference
+        self.fp16_inference = fp16_inference
+        self.amp_dtype = amp_dtype
+        self.pipeline_devices = pipeline_devices
 
     def remove_models_from_memory(self):
         self.models_in_memory = {}
@@ -281,6 +292,8 @@ class NodePFNClassifier(BaseEstimator, ClassifierMixin):
                                          return_logits=return_logits,
                                          no_grad=self.no_grad,
                                          batch_size_inference=self.batch_size_inference,
+                                         fp16_inference=self.fp16_inference,
+                                         amp_dtype=self.amp_dtype,
                                          **get_params_from_config(self.c))
         prediction_, y_ = prediction.squeeze(0), y_full.squeeze(1).long()[eval_pos:]
 
@@ -315,6 +328,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
                         differentiable_hps_as_style=False,
                         average_logits=True,
                         fp16_inference=False,
+                        amp_dtype=None,
                         normalize_with_sqrt=False,
                         seed=0,
                         no_grad=True,
@@ -419,7 +433,11 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
     eval_xs, eval_ys = eval_xs.to(device), eval_ys.to(device)
     eval_ys = eval_ys[:eval_position]
 
-    model.to(device)
+    # When the model is pipelined across multiple GPUs (distribute_layers) its
+    # layers deliberately live on different devices; moving the whole model to a
+    # single device would undo that. Inputs already start on the main device.
+    if getattr(model, '_pipeline_devices', None) is None:
+        model.to(device)
 
     model.eval()
 
@@ -516,7 +534,10 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
             if device == 'cpu':
                 output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, use_reentrant=False)
             else:
-                with torch.cuda.amp.autocast(enabled=fp16_inference):
+                autocast_kwargs = {'enabled': fp16_inference}
+                if amp_dtype is not None:
+                    autocast_kwargs['dtype'] = amp_dtype
+                with torch.cuda.amp.autocast(**autocast_kwargs):
                     output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, use_reentrant=False)
         outputs += [output_batch]
     #print('MODEL INFERENCE TIME ('+str(batch_input.device)+' vs '+device+', '+str(fp16_inference)+')', str(time.time()-start))

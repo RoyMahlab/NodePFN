@@ -3,16 +3,16 @@
 python -m nodepfn/node_classification.py  --dataset cora --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 4
 # Citeseer
 python -m nodepfn.node_classification  --dataset citeseer --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 2
-# Pubmed - memory error
-python -m nodepfn.node_classification  --dataset pubmed --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 2  
+# Pubmed - large graph: pipeline layers across 2 GPUs + bf16 to avoid OOM
+python -m nodepfn.node_classification  --dataset pubmed --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 2 --pipeline_gpus 2 --precision bf16
 # Air-USA
 python -m nodepfn.node_classification  --dataset air-usa --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25  --runs=5 --smoothing_steps 3 --label_num_per_class 20 --n_ensemble 8
 #Air-Europe
 python -m nodepfn.node_classification  --dataset air-europe --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25  --runs=5 --smoothing_steps 1 --label_num_per_class 20 --n_ensemble 32
 # Air-Brazil
 python -m nodepfn.node_classification  --dataset air-brazil --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25  --runs=5 --smoothing_steps 3 --label_num_per_class 20 --n_ensemble 32
-# WikiCS
-# python -m nodepfn.node_classification  --dataset wikics --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15  --runs=5 --smoothing_steps 2 --n_ensemble 32 --svd_algorithm arpack --cpu
+# WikiCS - was --cpu (OOM on GPU); now pipeline across 2 GPUs + bf16
+python -m nodepfn.node_classification  --dataset wikics --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15  --runs=5 --smoothing_steps 2 --n_ensemble 32 --svd_algorithm arpack --pipeline_gpus 2 --precision bf16
 # Computers
 python -m nodepfn.node_classification  --dataset amazon-computer --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15  --runs=5 --smoothing_steps 3 --svd_algorithm arpack
 # Photo
@@ -37,11 +37,11 @@ python -m nodepfn.node_classification  --dataset squirrel --base_model_path=mode
 python -m nodepfn.node_classification  --dataset dblp --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25  --runs=5 --smoothing_steps 3
 # Deezer - gone
 # python -m nodepfn.node_classification  --dataset deezer --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 50  --runs=5 --smoothing_steps 0 --n_ensemble 32
-# # Amazon-Ratings - MemoryError
-# python -m nodepfn.node_classification  --dataset amazon-ratings --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 20  --runs=3 --smoothing_steps 3 --n_ensemble 8
-# # Questions - MemoryError
-# python -m nodepfn.node_classification  --dataset questions --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25  --runs=5 --smoothing_steps 3 --n_ensemble 1
-# # Actor - MemoryError
-# python -m nodepfn.node_classification  --dataset actor --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 10  --runs=5  --smoothing_steps 0 --n_ensemble=32
-# # Minesweeper - MemoryError
-# python -m nodepfn.node_classification  --dataset minesweeper --base_model_path=models_ckpts/baseline --dim_reduction none --n_components 15  --runs=5 --smoothing_steps 1 --n_ensemble 32
+# Amazon-Ratings - was MemoryError; pipeline across 2 GPUs + bf16
+python -m nodepfn.node_classification  --dataset amazon-ratings --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 20  --runs=3 --smoothing_steps 3 --n_ensemble 8 --pipeline_gpus 2 --precision bf16
+# Questions - was MemoryError; pipeline across 2 GPUs + bf16
+python -m nodepfn.node_classification  --dataset questions --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25  --runs=5 --smoothing_steps 3 --n_ensemble 1 --pipeline_gpus 2 --precision bf16
+# Actor - was MemoryError; pipeline across 2 GPUs + bf16
+python -m nodepfn.node_classification  --dataset actor --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 10  --runs=5  --smoothing_steps 0 --n_ensemble=32 --pipeline_gpus 2 --precision bf16
+# Minesweeper - was MemoryError; pipeline across 2 GPUs + bf16
+python -m nodepfn.node_classification  --dataset minesweeper --base_model_path=models_ckpts/baseline --dim_reduction none --n_components 15  --runs=5 --smoothing_steps 1 --n_ensemble 32 --pipeline_gpus 2 --precision bf16

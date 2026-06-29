@@ -143,12 +143,15 @@ def run_experiments(args):
 
         start_time = time.time()
         base_model_path = args.base_model_path
-        clf = NodePFNClassifier(device='cpu' if args.cpu else 'cuda', base_path=base_model_path,
+        clf = NodePFNClassifier(device=args.compute_device, base_path=base_model_path,
                                N_ensemble_configurations=args.n_ensemble,
                                seed=args.seed,
                                batch_size_inference=args.batch_size_inference,
                                subsample_features=True,
-                               i=0, e=args.e)
+                               i=0, e=args.e,
+                               fp16_inference=args.fp16_inference,
+                               amp_dtype=args.amp_dtype,
+                               pipeline_devices=args.pipeline_devices)
 
         clf.fit(X_train, y_train, edge_index_run, overwrite_warning=True)
         fit_time = time.time() - start_time
@@ -229,7 +232,13 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type=str, default='roman-empire')
     parser.add_argument('--data_dir', type=str, default='./data/')
     parser.add_argument('--device', type=int, default=0,
-                        help='which gpu to use if any (default: 0)')
+                        help='which gpu to use for single-GPU inference (default: 0)')
+    parser.add_argument('--pipeline_gpus', type=int, default=1,
+                        help='split the transformer layers across this many GPUs (cuda:0..cuda:N-1) '
+                             'to cap per-GPU memory on large graphs (default: 1, single GPU)')
+    parser.add_argument('--precision', type=str, default='fp32',
+                        choices=['fp32', 'fp16', 'bf16'],
+                        help='inference precision; fp16/bf16 roughly halve memory (default: fp32)')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--epochs', type=int, default=500)
@@ -271,7 +280,32 @@ if __name__ == "__main__":
     parser.add_argument('--results_json', type=str, default=None,
                        help='If set, write the summary results dict as JSON to this path')
     args = parser.parse_args()
-    print(f"Testing NodePFN on {args.dataset} dataset")
+
+    # Resolve precision -> (autocast enabled, dtype).
+    _precision_map = {
+        'fp32': (False, None),
+        'fp16': (True, torch.float16),
+        'bf16': (True, torch.bfloat16),
+    }
+    args.fp16_inference, args.amp_dtype = _precision_map[args.precision]
+
+    # Resolve compute device(s). Pipelining spreads the layers across
+    # cuda:0..cuda:(pipeline_gpus-1); otherwise run on a single device.
+    if args.cpu:
+        args.compute_device = 'cpu'
+        args.pipeline_devices = None
+    elif args.pipeline_gpus > 1:
+        n_avail = torch.cuda.device_count()
+        if args.pipeline_gpus > n_avail:
+            raise SystemExit(f"--pipeline_gpus={args.pipeline_gpus} but only {n_avail} CUDA device(s) visible")
+        args.pipeline_devices = [f'cuda:{i}' for i in range(args.pipeline_gpus)]
+        args.compute_device = args.pipeline_devices[0]
+    else:
+        args.compute_device = f'cuda:{args.device}'
+        args.pipeline_devices = None
+
+    print(f"Testing NodePFN on {args.dataset} dataset "
+          f"(device={args.compute_device}, pipeline_gpus={args.pipeline_gpus}, precision={args.precision})")
 
     results = run_experiments(args)
 

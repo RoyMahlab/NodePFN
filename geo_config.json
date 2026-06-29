@@ -1,0 +1,213 @@
+{
+    "lr": 0.00011628444430274493,
+    "dropout": 0.0,
+    "emsize": 512,
+    "batch_size": 8,
+    "nlayers": 12,
+    "num_features": 100,
+    "nhead": 4,
+    "nhid_factor": 2,
+    "bptt": 1024,
+    "eval_positions": [
+        972
+    ],
+    "seq_len_used": 50,
+    "sampling": "mixed",
+    "epochs": 30,
+    "num_steps": 1024,
+    "verbose": false,
+    "mix_activations": true,
+    "pre_sample_causes": true,
+    "multiclass_type": "rank",
+    "nan_prob_unknown_reason_reason_prior": 0.5,
+    "categorical_feature_p": 0.2,
+    "nan_prob_no_reason": 0.0,
+    "nan_prob_unknown_reason": 0.0,
+    "nan_prob_a_reason": 0.0,
+    "max_num_classes": 20,
+    "num_classes": "<function <lambda>.<locals>.<lambda> at 0x7d38e5cc7240>",
+    "noise_type": "Gaussian",
+    "balanced": false,
+    "normalize_to_ranking": false,
+    "set_value_to_nan": 0.1,
+    "normalize_by_used_features": true,
+    "num_features_used": {
+        "uniform_int_sampler_f(3,max_features)": "<function <lambda>.<locals>.<lambda> at 0x7d38e5cc71a0>"
+    },
+    "num_categorical_features_sampler_a": -1.0,
+    "differentiable_hyperparameters": {
+        "prior_bag_exp_weights_1": {
+            "distribution": "uniform",
+            "min": 1000000.0,
+            "max": 1000001.0
+        },
+        "num_layers": {
+            "distribution": "meta_gamma",
+            "max_alpha": 2,
+            "max_scale": 3,
+            "round": true,
+            "lower_bound": 2
+        },
+        "prior_mlp_hidden_dim": {
+            "distribution": "meta_gamma",
+            "max_alpha": 3,
+            "max_scale": 100,
+            "round": true,
+            "lower_bound": 4
+        },
+        "prior_mlp_dropout_prob": {
+            "distribution": "meta_beta",
+            "scale": 0.6,
+            "min": 0.1,
+            "max": 5.0
+        },
+        "noise_std": {
+            "distribution": "meta_trunc_norm_log_scaled",
+            "max_mean": 0.3,
+            "min_mean": 0.0001,
+            "round": false,
+            "lower_bound": 0.0
+        },
+        "init_std": {
+            "distribution": "meta_trunc_norm_log_scaled",
+            "max_mean": 10.0,
+            "min_mean": 0.01,
+            "round": false,
+            "lower_bound": 0.0
+        },
+        "num_causes": {
+            "distribution": "meta_gamma",
+            "max_alpha": 3,
+            "max_scale": 7,
+            "round": true,
+            "lower_bound": 2
+        },
+        "is_causal": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                true,
+                false
+            ]
+        },
+        "pre_sample_weights": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                true,
+                false
+            ]
+        },
+        "y_is_effect": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                true,
+                false
+            ]
+        },
+        "prior_mlp_activations": {
+            "distribution": "meta_choice_mixed",
+            "choice_values": [
+                "<class 'torch.nn.modules.activation.Tanh'>",
+                "<class 'torch.nn.modules.linear.Identity'>",
+                "<class 'torch.nn.modules.activation.ReLU'>"
+            ]
+        },
+        "block_wise_dropout": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                true,
+                false
+            ]
+        },
+        "sort_features": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                true,
+                false
+            ]
+        },
+        "in_clique": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                true,
+                false
+            ]
+        },
+        "outputscale": {
+            "distribution": "meta_trunc_norm_log_scaled",
+            "max_mean": 10.0,
+            "min_mean": 1e-05,
+            "round": false,
+            "lower_bound": 0
+        },
+        "lengthscale": {
+            "distribution": "meta_trunc_norm_log_scaled",
+            "max_mean": 10.0,
+            "min_mean": 1e-05,
+            "round": false,
+            "lower_bound": 0
+        },
+        "noise": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                1e-05,
+                0.0001,
+                0.01
+            ]
+        },
+        "graph_type": {
+            "distribution": "meta_choice",
+            "choice_values": [
+                "sbm",
+                "random"
+            ]
+        },
+        "homophily_rate": {
+            "distribution": "uniform",
+            "min": 0.1,
+            "max": 0.9
+        },
+        "p_in": {
+            "distribution": "uniform",
+            "min": 0.01,
+            "max": 0.1
+        },
+        "edge_prob": {
+            "distribution": "uniform",
+            "min": 0.01,
+            "max": 0.05
+        }
+    },
+    "graph_type": "sbm",
+    "homophily_rate": 0.7832975425518771,
+    "p_in": 0.0178072036544119,
+    "edge_prob": 0.03289432523272932,
+    "prior_type": "geo_similarity",
+    "differentiable": false,
+    "flexible": false,
+    "recompute_attn": false,
+    "max_features": 100,
+    "bptt_extra_samples": null,
+    "output_multiclass_ordered_p": 0.0,
+    "multiclass_loss_type": "nono",
+    "new_mlp_per_example": true,
+    "prior_mlp_scale_weights_sqrt": true,
+    "batch_size_per_gp_sample": null,
+    "normalize_ignore_label_too": true,
+    "differentiable_hps_as_style": false,
+    "max_eval_pos": 1000,
+    "random_feature_rotation": true,
+    "rotate_normalized_labels": true,
+    "canonical_y_encoder": false,
+    "aggregate_k_gradients": 1,
+    "total_available_time_in_s": null,
+    "train_mixed_precision": true,
+    "efficient_eval_masking": true,
+    "pos_encoder": "none",
+    "use_wandb": false,
+    "wandb_project": "NodePFN",
+    "wandb_entity": null,
+    "wandb_run_name": "pfn",
+    "geo_fixed_hparams": {
+        "similarity": "cosine"
+    }
+}

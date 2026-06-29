@@ -22,7 +22,7 @@ python -m nodepfn.node_classification --dataset tolokers-2 --base_model_path=mod
 # city-reviews  (binary, 148k nodes, homophily HIGH 0.59, 37 feats)
 #   match: amazon-computer (homophilous) -> heavy smoothing
 #   -> randomized svd + modest ensemble for the larger graph
-python -m nodepfn.node_classification --dataset city-reviews --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 3 --n_ensemble 8 --svd_algorithm randomized
+python -m nodepfn.node_classification --dataset city-reviews --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 3 --n_ensemble 8 --svd_algorithm randomized --pipeline_gpus 2 --precision bf16
 
 # artnet-exp  (binary, 50k nodes, homophily MEDIUM 0.16, 75 feats)
 #   match: chameleon (low-med homophily, feature-rich) -> light smoothing,

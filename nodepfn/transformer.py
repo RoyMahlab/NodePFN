@@ -113,6 +113,33 @@ class TransformerModel(nn.Module):
                 nn.init.zeros_(attn.out_proj.weight)
                 nn.init.zeros_(attn.out_proj.bias)
 
+    def distribute_layers(self, devices):
+        """Pipeline the transformer-encoder layers across several GPUs.
+
+        The 12 GPS layers are split into contiguous blocks, one block per device,
+        so that no single GPU has to hold the activations for the whole model at
+        once. Input encoders stay on the first device and the decoder lives on the
+        last device; the per-layer forward (TransformerEncoderDiffInit.forward)
+        hands the hidden state from one device to the next. Results are identical
+        to single-device execution -- this only changes *where* each layer runs.
+        """
+        devices = [torch.device(d) for d in devices]
+        self._pipeline_devices = devices
+        self._main_device = devices[0]
+
+        layers = self.transformer_encoder.layers
+        n_layers, n_dev = len(layers), len(devices)
+        per_dev = math.ceil(n_layers / n_dev)
+        for idx, layer in enumerate(layers):
+            layer.to(devices[min(idx // per_dev, n_dev - 1)])
+
+        for module in (self.encoder, self.y_encoder, self.style_encoder,
+                       self.pos_encoder, self.input_ln, self.global_att_embeddings):
+            if module is not None:
+                module.to(devices[0])
+        self.decoder.to(devices[-1])
+        return self
+
     def forward(self, src, src_mask=None, single_eval_pos=None):
         assert isinstance(src, tuple), 'inputs (src) have to be given as (x,y) or (style,x,y) tuple'
 
@@ -191,6 +218,10 @@ class TransformerModel(nn.Module):
         else:
             output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
+        # When pipelined, the decoder ran on the last device; bring the result
+        # back to the main device so the caller sees a single, consistent device.
+        if getattr(self, '_pipeline_devices', None) is not None:
+            output = output.to(self._main_device)
         return output[single_eval_pos+len(style_src)+(self.global_att_embeddings.num_embeddings if self.global_att_embeddings else 0):]
 
     @torch.no_grad()
@@ -276,8 +307,25 @@ class TransformerEncoderDiffInit(Module):
         """
         output = src
 
+        # When the layers are pipelined across several GPUs (see
+        # TransformerModel.distribute_layers) each layer may live on a different
+        # device. Move the running hidden state (and the per-layer GNN inputs) to
+        # the layer's device before applying it. On a single device every layer
+        # shares the same device, so the .to() calls are no-ops.
+        edge_index_by_device = {}
         for mod in self.layers:
-            output = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, edge_index=edge_index)
+            layer_device = next(mod.parameters()).device
+            if output.device != layer_device:
+                output = output.to(layer_device)
+            ei = edge_index
+            if isinstance(edge_index, Tensor):
+                if layer_device not in edge_index_by_device:
+                    edge_index_by_device[layer_device] = edge_index.to(layer_device)
+                ei = edge_index_by_device[layer_device]
+            m = mask.to(layer_device) if isinstance(mask, Tensor) else mask
+            skpm = (src_key_padding_mask.to(layer_device)
+                    if isinstance(src_key_padding_mask, Tensor) else src_key_padding_mask)
+            output = mod(output, src_mask=m, src_key_padding_mask=skpm, edge_index=ei)
 
         if self.norm is not None:
             output = self.norm(output)

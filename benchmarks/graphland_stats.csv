@@ -1,0 +1,15 @@
+dataset,task,metric,nodes,edges,avg_degree,n_features,n_numerical,n_categorical,n_fraction,n_classes,directed,has_unlabeled,has_nans,homophily,homophily_level,edge_homophily,adjusted_homophily,target_assortativity
+hm-categories,multiclass_classification,accuracy,46563,10730995,460.92,35,31,4,29,21,False,False,False,0.0761,low,0.161,0.0761,
+pokec-regions,multiclass_classification,accuracy,1632803,22301964,27.32,56,2,54,1,183,True,True,True,0.4189,medium,0.4263,0.4189,
+web-topics,multiclass_classification,accuracy,2890331,12377411,8.56,263,108,155,0,28,True,True,True,0.1232,low,0.2202,0.1232,
+tolokers-2,binary_classification,AP,11758,519000,88.28,16,12,4,5,2,False,False,True,0.0926,low,0.5945,0.0926,
+city-reviews,binary_classification,AP,148801,1165415,15.66,37,19,18,8,2,False,True,False,0.5908,high,0.9015,0.5908,
+artnet-exp,binary_classification,AP,50405,280348,11.12,75,48,27,19,2,False,False,False,0.1553,medium,0.8317,0.1553,
+web-fraud,binary_classification,AP,2890331,12377411,8.56,266,108,158,0,2,True,False,True,0.013,heterophilous,0.9906,0.013,
+hm-prices,regression,R2,46563,10730995,460.92,41,30,11,29,,False,False,False,0.1194,low,,,0.1194
+avazu-ctr,regression,R2,76269,10984077,288.04,260,260,0,260,,False,False,False,0.1759,medium,,,0.1759
+city-roads-M,regression,R2,57073,107104,3.75,26,6,20,0,,True,True,False,0.7393,high,,,0.7393
+city-roads-L,regression,R2,142257,231550,3.26,26,6,20,0,,True,True,False,0.7219,high,,,0.7219
+twitch-views,regression,R2,168114,6797557,80.87,4,0,4,0,,False,False,False,-0.414,heterophilous,,,-0.414
+artnet-views,regression,R2,50405,280348,11.12,50,23,27,23,,False,False,False,0.1928,medium,,,0.1928
+web-traffic,regression,R2,2890331,12377411,8.56,267,109,158,0,,True,True,True,-0.2083,heterophilous,,,-0.2083
