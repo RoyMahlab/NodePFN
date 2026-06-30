@@ -2,7 +2,7 @@ import argparse
 import random
 import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import accuracy_score, average_precision_score, roc_auc_score
 from nodepfn.scripts.transformer_prediction_interface import NodePFNClassifier
 import time
 from torch_geometric.utils import to_undirected, remove_self_loops, add_self_loops
@@ -76,6 +76,7 @@ def run_experiments(args):
     test_accuracies = []
     valid_roc_aucs = []
     test_roc_aucs = []
+    test_ap = []
     fit_times = []
 
     for run in range(args.runs):
@@ -172,6 +173,7 @@ def run_experiments(args):
         roc_auc_valid = None
         roc_auc_test = None
         if len(np.unique(y)) == 2:
+            test_ap.append(average_precision_score(y_test, prob_test[:, 1]))
             roc_auc_valid = roc_auc_score(y_valid, prob_valid[:, 1])
             roc_auc_test = roc_auc_score(y_test, prob_test[:, 1])
         else:
@@ -193,6 +195,8 @@ def run_experiments(args):
     print("\n================ Summary ================")
     print(f"Validation Accuracy: {np.mean(valid_accuracies)*100:.2f} ± {np.std(valid_accuracies)*100:.2f}")
     print(f"Test Accuracy: {np.mean(test_accuracies)*100:.2f} ± {np.std(test_accuracies)*100:.2f}")
+    if test_ap:
+        print(f"Test Average Precision: {np.mean(test_ap)*100:.2f} ± {np.std(test_ap)*100:.2f}")
     have_valid_roc = all(v is not None for v in valid_roc_aucs)
     have_test_roc = all(v is not None for v in test_roc_aucs)
     if have_valid_roc:
@@ -212,6 +216,8 @@ def run_experiments(args):
         'valid_rocauc_std': float(np.std(valid_roc_aucs)) if have_valid_roc else None,
         'test_rocauc_mean': float(np.mean(test_roc_aucs)) if have_test_roc else None,
         'test_rocauc_std': float(np.std(test_roc_aucs)) if have_test_roc else None,
+        'test_ap_mean': float(np.mean(test_ap)),
+        'test_ap_std': float(np.std(test_ap)),
         'fit_time_mean': float(np.mean(fit_times)),
         'fit_time_std': float(np.std(fit_times)),
         'config': {
