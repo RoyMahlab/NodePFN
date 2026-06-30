@@ -17,7 +17,7 @@
 # tolokers-2  (binary, deg 88, homophily LOW 0.09, 16 feats)
 #   match: tolokers (it IS the GraphLand variant of tolokers)
 #   -> inherit dim_reduction none + n_ensemble 4
-python -m nodepfn.node_classification --dataset tolokers-2 --base_model_path=models_ckpts/baseline --dim_reduction none --n_components 25 --runs=5 --smoothing_steps 2 --n_ensemble 4
+python -m nodepfn.node_classification --dataset tolokers-2 --base_model_path=models_ckpts/baseline --dim_reduction none --n_components 25 --runs=5 --smoothing_steps 2 --n_ensemble 4 --pipeline_gpus 2 --precision bf16
 
 # city-reviews  (binary, 148k nodes, homophily HIGH 0.59, 37 feats)
 #   match: amazon-computer (homophilous) -> heavy smoothing
@@ -27,7 +27,7 @@ python -m nodepfn.node_classification --dataset city-reviews --base_model_path=m
 # artnet-exp  (binary, 50k nodes, homophily MEDIUM 0.16, 75 feats)
 #   match: chameleon (low-med homophily, feature-rich) -> light smoothing,
 #   many components, n_ensemble 16
-python -m nodepfn.node_classification --dataset artnet-exp --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 1 --n_ensemble 16
+python -m nodepfn.node_classification --dataset artnet-exp --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 1 --n_ensemble 16 --pipeline_gpus 2 --precision bf16 --batch_size_inference 1
 
 # hm-categories  (multiclass 21cls, deg 461 very dense, homophily LOW 0.08, 35 feats)
 #   match: coauthor-cs (many classes) -> n_components 25
