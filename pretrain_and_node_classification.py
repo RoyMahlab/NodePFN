@@ -70,6 +70,12 @@ def main():
                         help='override pretrain batch size')
     parser.add_argument('--aggregate_k_gradients', type=int, default=None,
                         help='override gradient accumulation (1 = full real batch per step)')
+    parser.add_argument('--max_num_classes', type=int, default=100,
+                        help='classification head width / max classes the prior may sample '
+                             '(default: 100; set to support high-cardinality datasets)')
+    parser.add_argument('--compat_mode', type=str, default='subset',
+                        choices=['subset', 'exact', 'stratify'],
+                        help="context/eval class-split policy passed to pretrain (default: subset)")
     parser.add_argument('--base_model_path', default=None,
                         help='model dir the baselines evaluate '
                              '(default: models_ckpts/<model_name>, i.e. the model just trained)')
@@ -117,7 +123,9 @@ def main():
             pre_cmd += ['--resume_epoch', str(args.resume_epoch)]
         for flag, val in (('--epochs', args.epochs), ('--num_steps', args.num_steps),
                           ('--batch_size', args.batch_size),
-                          ('--aggregate_k_gradients', args.aggregate_k_gradients)):
+                          ('--aggregate_k_gradients', args.aggregate_k_gradients),
+                          ('--max_num_classes', args.max_num_classes),
+                          ('--compat_mode', args.compat_mode)):
             if val is not None:
                 pre_cmd += [flag, str(val)]
         pre_env = base_env()

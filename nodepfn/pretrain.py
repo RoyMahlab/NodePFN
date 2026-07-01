@@ -32,6 +32,14 @@ parser.add_argument('--num_steps', type=int, default=None, help='override optimi
 parser.add_argument('--batch_size', type=int, default=None, help='override (nominal) batch size')
 parser.add_argument('--aggregate_k_gradients', type=int, default=None,
                     help='override gradient accumulation; 1 means a full real batch per step')
+parser.add_argument('--max_num_classes', type=int, default=None,
+                    help='override classification head width / max classes the prior may sample '
+                         '(default: config value of 20)')
+parser.add_argument('--compat_mode', type=str, default='subset',
+                    choices=['subset', 'exact', 'stratify'],
+                    help="context/eval class-split policy: 'subset' (default, lets multiclass "
+                         "datasets survive), 'exact' (old strict check), 'stratify' (force full "
+                         "class coverage; experimental)")
 parser.add_argument('--recompute_attn', dest='recompute_attn', action='store_true', default=None,
                     help='enable attention gradient checkpointing (slower, less memory)')
 parser.add_argument('--no_recompute_attn', dest='recompute_attn', action='store_false',
@@ -128,7 +136,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     config['recompute_attn'] = False  # gradient checkpointing off: faster backward, uses more memory
 
     config['max_features'] = max_features
-    config['max_num_classes'] = 20
+    config['max_num_classes'] = 100
     config['num_classes'] = uniform_int_sampler_f(2, config['max_num_classes'])
     config['balanced'] = False
     model_string = model_string + '_multiclass'
@@ -202,7 +210,13 @@ if __name__ == "__main__":
     config['efficient_eval_masking'] = True
 
     config['max_features'] = max_features
-    config['max_num_classes'] = 20
+    config['max_num_classes'] = 100
+
+    # Context/eval class-split policy. 'subset' lets high-cardinality datasets survive (every
+    # queried class must appear in context); 'exact' is the old strict check that collapsed
+    # multiclass datasets; 'stratify' forces full class coverage (experimental, see
+    # flexible_categorical). Applies to both the causal and geo priors.
+    config['compat_mode'] = args.compat_mode
 
     config['pos_encoder'] = 'none'
 
@@ -222,9 +236,16 @@ if __name__ == "__main__":
         config['aggregate_k_gradients'] = args.aggregate_k_gradients
     if args.recompute_attn is not None:
         config['recompute_attn'] = args.recompute_attn
+    if args.max_num_classes is not None:
+        # Resize the head and widen the prior's class draw together: num_classes is
+        # sampled uniformly in [2, max_num_classes] per dataset (causal prior), and the
+        # geo prior reads config['max_num_classes'] for both its draw and its safety clamp.
+        config['max_num_classes'] = args.max_num_classes
+        config['num_classes'] = uniform_int_sampler_f(2, config['max_num_classes'])
     print(f"[pretrain] epochs={config['epochs']} num_steps={config['num_steps']} "
           f"batch_size={config['batch_size']} aggregate_k_gradients={config['aggregate_k_gradients']} "
-          f"recompute_attn={config['recompute_attn']}")
+          f"recompute_attn={config['recompute_attn']} max_num_classes={config['max_num_classes']} "
+          f"compat_mode={config['compat_mode']}")
 
     # Select the graph prior. 'geo' replaces the MLP + SBM/random prior bag with the
     # casual_graph_generation similarity prior (features, labels and topology from one SCM).

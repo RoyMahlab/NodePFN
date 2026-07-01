@@ -102,7 +102,17 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = scheduler(optimizer, warmup_epochs, epochs if epochs is not None else 100) # when training for fixed time lr schedule takes 100 steps
 
-    scaler = GradScaler() if train_mixed_precision else None
+    # Prefer bf16 autocast when the GPU supports it: unlike fp16, bf16 has the same
+    # exponent range as fp32, so the forward pass cannot overflow to inf/NaN. bf16
+    # also needs no GradScaler. Fall back to fp16 (+ GradScaler) only when bf16 is
+    # unavailable (e.g. pre-Ampere GPUs or CPU).
+    use_amp = train_mixed_precision and torch.cuda.is_available()
+    use_bf16 = use_amp and torch.cuda.is_bf16_supported()
+    amp_dtype = torch.bfloat16 if use_bf16 else torch.float16
+    scaler = GradScaler() if (use_amp and not use_bf16) else None
+    if use_amp:
+        print(f'Mixed precision enabled using {amp_dtype} '
+              f'(GradScaler {"on" if scaler is not None else "off"}).')
 
     # check that everything uses up-to-date APIs
     utils.check_compatibility(dl)
@@ -148,7 +158,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
 
-                with autocast(enabled=scaler is not None):
+                with autocast(enabled=use_amp, dtype=amp_dtype):
                     # If style is set to None, it should not be transferred to device
                     output = model(tuple(e.to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)
@@ -216,7 +226,18 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     }, step=global_step)
 
             before_get_batch = time.time()
-        return total_loss / steps_per_epoch, (total_positional_losses / total_positional_losses_recorded).tolist(),\
+        # Guard against an epoch in which every batch produced a NaN loss: in that
+        # case nothing was recorded and both accumulators are still their scalar 0,
+        # which would raise ZeroDivisionError below.
+        if not torch.is_tensor(total_positional_losses_recorded):
+            print(f'WARNING: epoch {epoch} recorded 0 valid (non-NaN) steps out of '
+                  f'{batch + 1} batches; all losses were NaN. Skipping positional-loss '
+                  f'aggregation for this epoch. Check for fp16/AMP overflow, LR, or NaN inputs.')
+            positional_losses = [float('nan')] * bptt
+        else:
+            positional_losses = (total_positional_losses /
+                                 total_positional_losses_recorded.clamp(min=1)).tolist()
+        return total_loss / steps_per_epoch, positional_losses,\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
                ignore_steps.cpu().item()/(batch+1)
 
