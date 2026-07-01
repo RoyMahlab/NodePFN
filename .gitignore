@@ -12,3 +12,5 @@ data/
 wandb/
 nodepfn.egg-info/
 models_ckpts/
+
+.env
