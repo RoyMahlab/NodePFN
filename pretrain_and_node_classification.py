@@ -31,6 +31,13 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 NODEPFN_DIR = os.path.join(REPO_ROOT, 'nodepfn')
 
 
+def base_env():
+    """Env with nodepfn/ on PYTHONPATH (needed by the package's flat imports)."""
+    env = dict(os.environ)
+    env['PYTHONPATH'] = NODEPFN_DIR + os.pathsep + env.get('PYTHONPATH', '')
+    return env
+
+
 def _load_send_email():
     """Load utils/send_email.py by explicit path.
 
