@@ -252,13 +252,20 @@ def print_on_master_only(is_master):
 
 def init_dist(device):
     #print('init dist')
+    # NCCL collective watchdog timeout. The default of 20s is far too aggressive
+    # for this workload: the prior generates graph data on the fly, so per-step
+    # time varies a lot and a rank that draws a heavy graph can leave its peers
+    # waiting on the gradient all-reduce for longer than 20s -> NCCL aborts the
+    # whole job. Default to 60 min; override with NODEPFN_NCCL_TIMEOUT_MIN.
+    nccl_timeout = datetime.timedelta(
+        minutes=float(os.environ.get('NODEPFN_NCCL_TIMEOUT_MIN', '60')))
     if 'LOCAL_RANK' in os.environ:
         # launched with torch.distributed.launch
         rank = int(os.environ["LOCAL_RANK"])
         print('torch.distributed.launch and my rank is', rank)
         torch.cuda.set_device(rank)
         os.environ['CUDA_VISIBLE_DEVICES'] = str(rank)
-        torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=datetime.timedelta(seconds=20),
+        torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=nccl_timeout,
                                              world_size=torch.cuda.device_count(), rank=rank)
         torch.distributed.barrier()
         print_on_master_only(rank == 0)
@@ -274,7 +281,7 @@ def init_dist(device):
         torch.cuda.set_device(rank)
         os.environ['CUDA_VISIBLE_DEVICES'] = str(rank)
         print('distributed submitit launch and my rank is', rank)
-        torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=datetime.timedelta(seconds=20),
+        torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=nccl_timeout,
                                              world_size=torch.cuda.device_count(), rank=rank)
         torch.distributed.barrier()
         print_on_master_only(rank == 0)

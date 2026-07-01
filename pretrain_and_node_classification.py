@@ -16,10 +16,14 @@ Usage (from repo root):
     python pretrain_and_baseline.py --model_name my_run --datasets cora citeseer
 """
 import argparse
+import collections
+import importlib.util
 import os
 import shlex
 import subprocess
 import sys
+import time
+import traceback
 
 import wandb
 
@@ -27,18 +31,70 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 NODEPFN_DIR = os.path.join(REPO_ROOT, 'nodepfn')
 
 
-def base_env():
-    """Env with nodepfn/ on PYTHONPATH (needed by the package's flat imports)."""
-    env = dict(os.environ)
-    env['PYTHONPATH'] = NODEPFN_DIR + os.pathsep + env.get('PYTHONPATH', '')
-    return env
+def _load_send_email():
+    """Load utils/send_email.py by explicit path.
+
+    A plain ``import utils`` is ambiguous here: we add nodepfn/ (which contains
+    its own utils.py) to PYTHONPATH for the subprocesses, so resolve the file
+    directly instead of relying on import order.
+    """
+    path = os.path.join(REPO_ROOT, 'utils', 'send_email.py')
+    spec = importlib.util.spec_from_file_location('nodepfn_send_email', path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.send_email
 
 
-def run(cmd, env):
+def notify(subject, body):
+    """Best-effort email; never let a mail failure mask the real outcome."""
+    try:
+        send_email = _load_send_email()
+        send_email(subject, body)
+    except Exception as exc:  # noqa: BLE001 - notification must not crash the run
+        print(f"WARNING: failed to send notification email: {exc!r}")
+
+
+class StageError(Exception):
+    """A pipeline stage exited non-zero; carries the captured output tail."""
+
+    def __init__(self, stage, cmd, returncode, tail):
+        self.stage = stage
+        self.cmd = cmd
+        self.returncode = returncode
+        self.tail = tail
+        super().__init__(f"stage '{stage}' failed with exit code {returncode}")
+
+
+def run(cmd, env, stage='command'):
+    """Run a subprocess, streaming its output live while keeping a tail buffer.
+
+    On non-zero exit raises StageError carrying the last lines of output so the
+    caller can include *why* it failed in the notification email.
+    """
     print(f"\n>>> {' '.join(shlex.quote(c) for c in cmd)}")
-    proc = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
+    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    tail = collections.deque(maxlen=80)
+    pending = ''
+    fd = proc.stdout.fileno()
+    while True:
+        data = os.read(fd, 65536)  # returns as soon as any output is available
+        if not data:
+            break
+        text = data.decode('utf-8', errors='replace')
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        pending += text
+        while '\n' in pending:
+            line, pending = pending.split('\n', 1)
+            clean = line.rsplit('\r', 1)[-1].strip()  # keep final render of tqdm lines
+            if clean:
+                tail.append(clean[:500])
+    proc.wait()
+    if pending.strip():
+        tail.append(pending.rsplit('\r', 1)[-1].strip()[:500])
     if proc.returncode != 0:
-        raise SystemExit(f"command failed with exit code {proc.returncode}: {cmd[0]}")
+        raise StageError(stage, cmd, proc.returncode, list(tail))
 
 
 def main():
@@ -100,6 +156,56 @@ def main():
 
     print(f"wandb run id: {run_id}  (project={args.wandb_project}, name={run_name})")
 
+    run_label = f"{run_name} (run id {run_id}, prior={args.prior}, gpus={args.gpus})"
+    started_at = time.strftime('%Y-%m-%d %H:%M:%S')
+    t0 = time.time()
+
+    def _elapsed():
+        secs = int(time.time() - t0)
+        h, rem = divmod(secs, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h}h{m:02d}m{s:02d}s"
+
+    try:
+        _run_pipeline(args, run_id, run_name, base_model_path)
+    except StageError as exc:
+        tail = '\n'.join(exc.tail) or '(no output captured)'
+        body = (f"Training FAILED.\n\n"
+                f"Run:        {run_label}\n"
+                f"Stage:      {exc.stage}\n"
+                f"Exit code:  {exc.returncode}\n"
+                f"Command:    {' '.join(shlex.quote(c) for c in exc.cmd)}\n"
+                f"Started:    {started_at}\n"
+                f"Elapsed:    {_elapsed()}\n\n"
+                f"--- last output ---\n{tail}\n")
+        notify(f"[NodePFN] FAILED: {run_name} ({exc.stage})", body)
+        raise SystemExit(f"command failed with exit code {exc.returncode}: {exc.cmd[0]}")
+    except KeyboardInterrupt:
+        body = (f"Training INTERRUPTED (KeyboardInterrupt / SIGINT).\n\n"
+                f"Run:      {run_label}\n"
+                f"Started:  {started_at}\n"
+                f"Elapsed:  {_elapsed()}\n")
+        notify(f"[NodePFN] INTERRUPTED: {run_name}", body)
+        raise
+    except BaseException as exc:  # noqa: BLE001 - report any orchestration failure
+        body = (f"Training FAILED (orchestrator error, not a training subprocess).\n\n"
+                f"Run:      {run_label}\n"
+                f"Error:    {type(exc).__name__}: {exc}\n"
+                f"Started:  {started_at}\n"
+                f"Elapsed:  {_elapsed()}\n\n"
+                f"--- traceback ---\n{traceback.format_exc()}\n")
+        notify(f"[NodePFN] FAILED: {run_name} (orchestrator)", body)
+        raise
+    else:
+        body = (f"Training SUCCEEDED.\n\n"
+                f"Run:      {run_label}\n"
+                f"Started:  {started_at}\n"
+                f"Elapsed:  {_elapsed()}\n\n"
+                f"Pretraining + baselines logged to one wandb run: {run_id}\n")
+        notify(f"[NodePFN] SUCCESS: {run_name}", body)
+
+
+def _run_pipeline(args, run_id, run_name, base_model_path):
     # --- stage 1: pretrain, pinning the wandb run id via env ---
     if not args.skip_pretrain:
         # launcher: single process, or torchrun across N GPUs (DDP)
@@ -130,7 +236,7 @@ def main():
                 pre_cmd += [flag, str(val)]
         pre_env = base_env()
         pre_env['WANDB_RUN_ID'] = run_id
-        run(pre_cmd, pre_env)
+        run(pre_cmd, pre_env, stage='pretrain')
 
     # --- stage 2: baselines, resuming the same run ---
     base_cmd = [sys.executable, 'log_baseline_to_wandb.py',
@@ -141,7 +247,7 @@ def main():
         base_cmd += ['--wandb_entity', args.wandb_entity]
     if args.datasets:
         base_cmd += ['--datasets', *args.datasets]
-    run(base_cmd, base_env())
+    run(base_cmd, base_env(), stage='baselines')
 
     print(f"\nDone. Pretraining + baselines logged to one wandb run: {run_id}")
 
