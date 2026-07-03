@@ -318,13 +318,31 @@ def load_graphland(data_dir, name, split='RL'):
                                   "only transductive splits (RL/RH/TH) are supported here.")
     PyGDataset = _get_graphland_pygdataset()
     pygds = PyGDataset(name=name, split=split.upper())
+    nan_label_nodes = torch.isnan(pygds[0].y)
+    nan_train_mask = torch.isnan(pygds[0].train_mask)
+    nan_val_mask = torch.isnan(pygds[0].val_mask)
+    nan_test_mask = torch.isnan(pygds[0].test_mask)
+    nan_x_mask = torch.isnan(pygds[0].x).any(dim=1)
+    nan_mask = nan_label_nodes | nan_train_mask | nan_val_mask | nan_test_mask | nan_x_mask
+    n_nodes = pygds[0].num_nodes
+    if nan_mask.any():
+        print(f"Warning: GraphLand dataset {name} has {nan_mask.sum().item()} nodes with NaN values "
+              f"in labels, features, or masks; these nodes will be removed.")
+        pygds[0].x = pygds[0].x[~nan_mask]
+        pygds[0].y = pygds[0].y[~nan_mask]
+        pygds[0].train_mask = pygds[0].train_mask[~nan_mask]
+        pygds[0].val_mask = pygds[0].val_mask[~nan_mask]
+        pygds[0].test_mask = pygds[0].test_mask[~nan_mask]
+        # Reindex edge_index to remove edges connected to NaN nodes
+        edge_index = pygds[0].edge_index
+        mask_indices = torch.arange(n_nodes)[~nan_mask]
+        index_map = torch.full((n_nodes,), -1, dtype=torch.long)
+        index_map[mask_indices] = torch.arange(mask_indices.size(0))
+        new_edge_index = index_map[edge_index]
+        valid_edges = (new_edge_index >= 0).all(dim=0)
+        pygds[0].edge_index = new_edge_index[:, valid_edges]
+        
     ds = wrap_tg_dataset(name, pygds[0])  # transductive -> single Data
-    # Datasets with unlabeled nodes return float labels containing NaN. For
-    # classification, make labels integer class ids with -1 for unlabeled nodes
-    # (those are excluded from every split mask, so -1 is never scored).
-    if 'classification' in pygds.task and torch.is_floating_point(ds.label):
-        y = ds.label
-        ds.label = torch.where(torch.isnan(y), torch.full_like(y, -1), y).to(torch.int64)
     return ds
 
 
