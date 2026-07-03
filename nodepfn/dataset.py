@@ -7,7 +7,7 @@ import torch_geometric.transforms as T
 from torch_geometric.data import Data
 from torch_geometric.datasets import (
     Amazon, Coauthor, WikiCS, Planetoid, Reddit,
-    CoraFull, WebKB, WikipediaNetwork, HeterophilousGraphDataset, Actor, DeezerEurope, Airports
+    CoraFull, WebKB, WikipediaNetwork, HeterophilousGraphDataset, Actor, DeezerEurope, Airports, CitationFull
 )
 from ogb.nodeproppred import NodePropPredDataset, PygNodePropPredDataset
 
@@ -68,6 +68,10 @@ def load_coauthor(data_dir, name):
 def load_wikics(data_dir):
     d = WikiCS(root=f'{data_dir}/wikics')[0]
     return wrap_tg_dataset('wikics', d)
+
+def load_dblp_full(data_dir):
+    d = CitationFull(root=f'{data_dir}/CitationFull', name='DBLP')[0]
+    return wrap_tg_dataset('dblp-full', d)
 
 def load_reddit(data_dir):
     d = Reddit(root=f'{data_dir}/Reddit')[0]
@@ -364,6 +368,8 @@ def load_dataset(data_dir, name):
         return load_reddit(data_dir)
     if name == 'cora-full':
         return load_cora_full(data_dir)
+    if name == 'dblp-full':
+        return load_dblp_full(data_dir)
     if name in ('cornell', 'texas', 'wisconsin'):
         return load_webkb(data_dir, name)
     if name in ('chameleon'):
