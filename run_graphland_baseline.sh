@@ -27,15 +27,9 @@ python -m nodepfn.node_classification --dataset city-reviews --base_model_path=m
 # artnet-exp  (binary, 50k nodes, homophily MEDIUM 0.16, 75 feats)
 #   match: chameleon (low-med homophily, feature-rich) -> light smoothing,
 #   many components, n_ensemble 16
-python -m nodepfn.node_classification --dataset artnet-exp --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 1 --n_ensemble 16 --pipeline_gpus 2 --precision bf16 --batch_size_inference 1
+python -m nodepfn.node_classification --dataset artnet-exp --base_model_path=models_ckpts/baseline_100_classes --e 50 --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 1 --n_ensemble 16 --query_batch_size 5000 --precision bf16 --batch_size_inference 1
 
 # hm-categories  (multiclass 21cls, deg 461 very dense, homophily LOW 0.08, 35 feats)
 #   match: coauthor-cs (many classes) -> n_components 25
 #   -> low homophily + huge density: cut smoothing to 1, randomized svd, smaller ensemble
-python -m nodepfn.node_classification --dataset hm-categories --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 1 --n_ensemble 8 --svd_algorithm randomized
-
-# pokec-regions  (multiclass 183cls, 1.6M nodes, homophily MEDIUM 0.42, 56 feats)
-#   match: coauthor-cs (many classes, homophilous) -> smoothing 2
-#   WARNING: very large (1.6M nodes / 22M edges) -> likely OOM on GPU.
-#   Scale-safe: randomized svd, n_ensemble 4, --cpu. Drop --cpu if it fits on GPU.
-python -m nodepfn.node_classification --dataset pokec-regions --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 2 --n_ensemble 4 --svd_algorithm randomized --cpu
+python -m nodepfn.node_classification --dataset hm-categories --base_model_path=models_ckpts/baseline_100_classes --e 50 --dim_reduction tsvd --n_components 25 --runs=5 --smoothing_steps 1 --n_ensemble 8 --svd_algorithm randomized --query_batch_size 5000 --precision bf16 --batch_size_inference 1
