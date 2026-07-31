@@ -17,12 +17,12 @@
 # tolokers-2  (binary, deg 88, homophily LOW 0.09, 16 feats)
 #   match: tolokers (it IS the GraphLand variant of tolokers)
 #   -> inherit dim_reduction none + n_ensemble 4
-python -m nodepfn.node_classification --dataset tolokers-2 --base_model_path=models_ckpts/baseline --dim_reduction none --n_components 25 --runs=5 --smoothing_steps 2 --n_ensemble 4 --pipeline_gpus 2 --precision bf16
+python -m nodepfn.node_classification --dataset tolokers-2 --base_model_path=models_ckpts/baseline --dim_reduction none --n_components 25 --runs=5 --smoothing_steps 2 --n_ensemble 4 --precision bf16
 
 # city-reviews  (binary, 148k nodes, homophily HIGH 0.59, 37 feats)
 #   match: amazon-computer (homophilous) -> heavy smoothing
 #   -> randomized svd + modest ensemble for the larger graph
-python -m nodepfn.node_classification --dataset city-reviews --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 3 --n_ensemble 8 --svd_algorithm randomized --pipeline_gpus 2 --precision bf16
+python -m nodepfn.node_classification --dataset city-reviews --base_model_path=models_ckpts/baseline --dim_reduction tsvd --n_components 15 --runs=5 --smoothing_steps 3 --n_ensemble 8 --svd_algorithm randomized --precision bf16 --query_batch_size 5000 --batch_size_inference 1
 
 # artnet-exp  (binary, 50k nodes, homophily MEDIUM 0.16, 75 feats)
 #   match: chameleon (low-med homophily, feature-rich) -> light smoothing,
