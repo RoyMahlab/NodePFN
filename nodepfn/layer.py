@@ -138,7 +138,14 @@ class TransformerEncoderLayer(Module):
                     h_local_input = self.norm1_local(h)
                 else:
                     h_local_input = h
-                    
+
+                # h/norm1_local's output can stay fp32 even under bf16/fp16 autocast (e.g.
+                # LayerNorm is always computed in fp32); cast down so the GCN's edge-gather
+                # -- whose memory scales with num_edges * hidden_dim * itemsize -- isn't
+                # needlessly fp32-sized on graphs with a large edge count.
+                if torch.is_autocast_enabled():
+                    h_local_input = h_local_input.to(torch.get_autocast_gpu_dtype())
+
                 h_local = self.local_model(h_local_input.transpose(0,1), edge_index).transpose(0,1)
                 h_local = self.dropout_local(h_local)
                 h_local = h_in1 + h_local  # Residual connection

@@ -23,15 +23,24 @@ def fix_seed(seed=0):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def update_edge_index(edge_index, train_idx, test_idx):
+def update_edge_index(edge_index, train_idx, test_idx, num_nodes):
+    """Remap edge_index (global node ids) onto local [0..len(train_idx)) for train_idx
+    and [len(train_idx)..len(train_idx)+len(test_idx)) for test_idx. Edges touching a node
+    outside train_idx/test_idx are dropped rather than silently aliased to node 0, so this
+    is safe to call with test_idx set to a chunk of the full query set."""
     all_indices = torch.cat([train_idx, test_idx])
-    
-    old_to_new = torch.zeros(all_indices.max() + 1, dtype=torch.long)
+
+    keep_node = torch.zeros(num_nodes, dtype=torch.bool)
+    keep_node[all_indices] = True
+    edge_mask = keep_node[edge_index[0]] & keep_node[edge_index[1]]
+    edge_index = edge_index[:, edge_mask]
+
+    old_to_new = torch.zeros(num_nodes, dtype=torch.long)
     old_to_new[train_idx] = torch.arange(len(train_idx))
     old_to_new[test_idx] = torch.arange(len(test_idx)) + len(train_idx)
-    
+
     new_edge_index = old_to_new[edge_index]
-    
+
     return new_edge_index
 
 def run_experiments(args):
@@ -136,7 +145,7 @@ def run_experiments(args):
         valid_mask = torch.isin(query_idx, valid_idx)
         test_mask = torch.isin(query_idx, test_idx)
 
-        edge_index_run = update_edge_index(edge_index, train_idx, query_idx)
+        edge_index_run = update_edge_index(edge_index, train_idx, query_idx, num_nodes=n)
         print(f"Train set: {X_train.shape[0]} samples")
         print(f"Query set (valid + test): {X_query.shape[0]} samples")
         print(f"  - Valid: {len(valid_idx)} samples")
@@ -157,8 +166,22 @@ def run_experiments(args):
         clf.fit(X_train, y_train, edge_index_run, overwrite_warning=True)
         fit_time = time.time() - start_time
 
-        predictions, p_eval = clf.predict(X_query, normalize_with_test=True, return_winning_probability=True)
-        prediction_probabilities = clf.predict_proba(X_query, normalize_with_test=True)
+        if args.query_batch_size is not None and X_query.shape[0] > args.query_batch_size:
+            prob_chunks = []
+            for start in range(0, X_query.shape[0], args.query_batch_size):
+                chunk_query_idx = query_idx[start:start + args.query_batch_size]
+                # local_model (GCN) needs edge_index consistent with whichever nodes are
+                # in this call's X_full (train + this chunk); edges to query nodes outside
+                # the chunk are dropped, so cross-chunk query-query smoothing is lost.
+                clf.edge_index = update_edge_index(edge_index, train_idx, chunk_query_idx, num_nodes=n)
+                prob_chunks.append(
+                    clf.predict_proba(X_query[start:start + args.query_batch_size], normalize_with_test=True)
+                )
+            prediction_probabilities = np.concatenate(prob_chunks, axis=0)
+        else:
+            prediction_probabilities = clf.predict_proba(X_query, normalize_with_test=True)
+        predictions = clf.classes_.take(np.argmax(prediction_probabilities, axis=-1))
+        p_eval = prediction_probabilities.max(axis=-1)
 
         y_valid = y_query[valid_mask]
         y_test = y_query[test_mask]
@@ -272,6 +295,9 @@ if __name__ == "__main__":
                         help='evaluation metric')
     
     parser.add_argument('--batch_size_inference', type=int, default=32)
+    parser.add_argument('--query_batch_size', type=int, default=None,
+                        help='split prediction over the query set into chunks of this many rows, '
+                             'to cap the (train+query) attention context on large graphs (default: no chunking)')
     parser.add_argument('--base_model_path', type=str, default='models_ckpts/pfn/')
     parser.add_argument('--e', type=int, default=30)
     parser.add_argument('--dim_reduction', type=str, default='none',
