@@ -328,6 +328,25 @@ def load_graphland(data_dir, name, split='RL'):
     return ds
 
 
+# -------------------- BlueSky (graphbench) --------------------
+# BlueSky is inductive: train/val/test are three separate graphs (own nodes,
+# edges, and features from disjoint time windows), not masks over one graph.
+# So it can't go through load_dataset()/NCDataset (single-graph, transductive);
+# callers needing BlueSky use load_bluesky_splits() directly.
+_BLUESKY_ROOT = '/gfs/shared/public/datasets/graphbench-updated/'
+_BLUESKY_NAMES = ('bluesky_quotes', 'bluesky_replies', 'bluesky_reposts')
+
+
+def load_bluesky_splits(name):
+    from graphbench.datasets import BlueSkyDataset
+    if name not in _BLUESKY_NAMES:
+        raise ValueError(f"Unknown BlueSky dataset: {name} (expected one of {_BLUESKY_NAMES})")
+    return {
+        split: BlueSkyDataset(name=name, root=_BLUESKY_ROOT, split=split)[0]
+        for split in ('train', 'val', 'test')
+    }
+
+
 def load_dataset(data_dir, name):
     # GraphLand datasets, optionally with a split suffix "name:SPLIT" (default RL).
     gl_name, _, gl_split = name.partition(':')
