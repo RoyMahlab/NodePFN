@@ -213,31 +213,11 @@ def load_lastfm_asia(data_dir):
     return wrap_tg_dataset('lastfm_asia', Data(x=x, edge_index=edge_index, y=y))
 
 def load_dblp(data_dir):
-    import numpy as np
-    from scipy import sparse
-    path = os.path.join(data_dir, 'dblp',  'dblp.npz')
-    # path = os.path.join(data_dir, 'dblp', 'dblp', 'dblp.npz')
-
-    with np.load(path, allow_pickle=True) as f:
-        # adjacency
-        adj = sparse.csr_matrix(
-            (f['adj_data'], f['adj_indices'], f['adj_indptr']),
-            shape=f['adj_shape']
-        )
-        # features
-        feat = sparse.csr_matrix(
-            (f['attr_data'], f['attr_indices'], f['attr_indptr']),
-            shape=f['attr_shape']
-        ).toarray()
-        # labels
-        labels = f['labels']
-
-    edge_index = torch.tensor(np.vstack(adj.nonzero()), dtype=torch.long)
-    x = torch.tensor(feat, dtype=torch.float)
-    y = torch.tensor(labels.squeeze(), dtype=torch.long)
-
-    data = Data(x=x, edge_index=edge_index, y=y)
-    return wrap_tg_dataset('dblp', data)
+    # Same graph2gauss dblp.npz source the old manual loader expected, via PyG's
+    # own download path instead of requiring the file to be placed manually.
+    from torch_geometric.datasets import CitationFull
+    d = CitationFull(root=f'{data_dir}/CitationFull', name='DBLP')[0]
+    return wrap_tg_dataset('dblp', d)
 
 
 def load_deezer_dataset(data_dir):
