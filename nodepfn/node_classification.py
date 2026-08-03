@@ -137,6 +137,15 @@ def run_experiments(args):
         train_idx_set = set(train_idx.tolist())
         query_idx = torch.tensor([i for i in all_idx.tolist() if i not in train_idx_set], dtype=torch.long)
 
+        if args.train_sample_size is not None and len(train_idx) > args.train_sample_size:
+            # Train tokens self-attend to each other (O(train_size^2)), so datasets with a large
+            # fixed train split (e.g. ogbn-arxiv's ~91k-node OGB split) need the in-context example
+            # set capped regardless of GPU memory; leftover train nodes are dropped, not added to query.
+            rng = np.random.RandomState(args.seed)
+            sample = np.sort(rng.choice(len(train_idx), size=args.train_sample_size, replace=False))
+            print(f"Subsampling train set from {len(train_idx)} to {args.train_sample_size} in-context examples")
+            train_idx = train_idx[torch.from_numpy(sample)]
+
         X_train = X[train_idx]
         y_train = y[train_idx]
         X_query = X[query_idx]
@@ -298,6 +307,9 @@ if __name__ == "__main__":
     parser.add_argument('--query_batch_size', type=int, default=None,
                         help='split prediction over the query set into chunks of this many rows, '
                              'to cap the (train+query) attention context on large graphs (default: no chunking)')
+    parser.add_argument('--train_sample_size', type=int, default=None,
+                        help='cap the in-context train set to this many nodes (train tokens self-attend '
+                             'to each other, so this is independent of --query_batch_size; default: no cap)')
     parser.add_argument('--base_model_path', type=str, default='models_ckpts/pfn/')
     parser.add_argument('--e', type=int, default=30)
     parser.add_argument('--dim_reduction', type=str, default='none',

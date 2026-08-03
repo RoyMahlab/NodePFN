@@ -1,4 +1,6 @@
 from functools import partial
+
+from loguru import logger
 import nodepfn.encoders as encoders
 
 from nodepfn.transformer import TransformerModel
@@ -36,7 +38,7 @@ def load_model_only_inference(path, filename, device):
     Loads a saved model from the specified position. This function only restores inference capabilities and
     cannot be used for further training.
     """
-
+    logger.info(f"Loading model from {os.path.join(path, filename)}")
     model_state, optimizer_state, config_sample = torch.load(os.path.join(path, filename), map_location='cpu')
 
     if (('nan_prob_no_reason' in config_sample and config_sample['nan_prob_no_reason'] > 0.0) or

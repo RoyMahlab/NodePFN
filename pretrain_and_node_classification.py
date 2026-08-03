@@ -74,7 +74,8 @@ def main():
                         help='model dir the baselines evaluate '
                              '(default: models_ckpts/<model_name>, i.e. the model just trained)')
     parser.add_argument('--datasets', nargs='*', default=None,
-                        help='only evaluate these datasets (default: all in run_baseline.sh)')
+                        help='only evaluate these datasets (default: all in run_graphland_baseline.sh + '
+                             'run_extra_baseline.sh + run_bluesky_baseline.sh)')
     parser.add_argument('--skip_pretrain', action='store_true',
                         help='skip pretraining; requires --wandb_run_id to join an existing run')
     parser.add_argument('--wandb_run_id', default=None,
@@ -125,7 +126,13 @@ def main():
         run(pre_cmd, pre_env)
 
     # --- stage 2: baselines, resuming the same run ---
+    # Classification: GraphLand + the standalone extras (ogbn-arxiv, dblp, cora-full).
+    classification_scripts = [
+        os.path.join(REPO_ROOT, 'run_graphland_baseline.sh'),
+        os.path.join(REPO_ROOT, 'run_extra_baseline.sh'),
+    ]
     base_cmd = [sys.executable, 'log_baseline_to_wandb.py',
+                '--script', *classification_scripts,
                 '--wandb_run_id', run_id,
                 '--wandb_project', args.wandb_project,
                 '--base_model_path', base_model_path]
@@ -134,6 +141,18 @@ def main():
     if args.datasets:
         base_cmd += ['--datasets', *args.datasets]
     run(base_cmd, base_env())
+
+    # Regression: BlueSky (inductive, continuous targets -- separate runner/metrics).
+    regression_cmd = [sys.executable, 'log_regression_to_wandb.py',
+                       '--script', os.path.join(REPO_ROOT, 'run_bluesky_baseline.sh'),
+                       '--wandb_run_id', run_id,
+                       '--wandb_project', args.wandb_project,
+                       '--base_model_path', base_model_path]
+    if args.wandb_entity:
+        regression_cmd += ['--wandb_entity', args.wandb_entity]
+    if args.datasets:
+        regression_cmd += ['--datasets', *args.datasets]
+    run(regression_cmd, base_env())
 
     print(f"\nDone. Pretraining + baselines logged to one wandb run: {run_id}")
 
