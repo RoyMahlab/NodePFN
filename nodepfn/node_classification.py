@@ -248,8 +248,10 @@ def run_experiments(args):
         'valid_rocauc_std': float(np.std(valid_roc_aucs)) if have_valid_roc else None,
         'test_rocauc_mean': float(np.mean(test_roc_aucs)) if have_test_roc else None,
         'test_rocauc_std': float(np.std(test_roc_aucs)) if have_test_roc else None,
-        'test_ap_mean': float(np.mean(test_ap)),
-        'test_ap_std': float(np.std(test_ap)),
+        # average_precision_score is only computed for binary datasets, so test_ap is empty
+        # for multiclass ones; np.mean([]) would be a NaN plus three RuntimeWarnings.
+        'test_ap_mean': float(np.mean(test_ap)) if test_ap else None,
+        'test_ap_std': float(np.std(test_ap)) if test_ap else None,
         'fit_time_mean': float(np.mean(fit_times)),
         'fit_time_std': float(np.std(fit_times)),
         'config': {

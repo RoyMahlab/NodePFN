@@ -15,6 +15,7 @@ Usage (from repo root):
 """
 import argparse
 import json
+import math
 import os
 import shlex
 import subprocess
@@ -140,7 +141,6 @@ def main():
     run = wandb.init(**init_kwargs)
 
     columns = ['dataset', 'runs', 'test_acc_mean', 'test_acc_std', 
-               "test_mse_mean", "test_mae_mean", "test_r2_mean", "test_spearman_mean",
                "test_ap_mean",
                'valid_acc_mean', 'valid_acc_std', 'test_rocauc_mean',
                'test_rocauc_std', 'fit_time_mean', 'smoothing_steps',
@@ -159,9 +159,7 @@ def main():
         table.add_data(
             res['dataset'], res['runs'],
             res['test_acc_mean'], res['test_acc_std'],
-            res['test_mse_mean'], res['test_mae_mean'], 
-            res['test_r2_mean'], res['test_spearman_mean'], 
-            res['test_ap_mean'],
+            res.get('test_ap_mean', None),
             res['valid_acc_mean'], res['valid_acc_std'],
             res['test_rocauc_mean'], res['test_rocauc_std'],
             res['fit_time_mean'], cfg.get('smoothing_steps'),
@@ -176,14 +174,19 @@ def main():
 
     if completed:
         def col_mean(key):
-            vals = [r[key] for r in completed if r.get(key) is not None]
+            # skip None (metric undefined for that dataset) and NaN (empty-slice mean,
+            # e.g. test_ap on a multiclass dataset) -- a single NaN would poison the mean
+            vals = [r[key] for r in completed
+                    if r.get(key) is not None and not math.isnan(r[key])]
             return sum(vals) / len(vals) if vals else None
 
         mean_test_acc = col_mean('test_acc_mean')
-        # append a final MEAN row averaging the numeric metric columns across datasets
+        # append a final MEAN row averaging the numeric metric columns across datasets.
+        # Column order must match `columns` above exactly -- wandb.Table rejects a row
+        # with the wrong arity, so test_ap_mean has to be here too even when it's None.
         table.add_data(
             'MEAN', len(completed),
-            mean_test_acc, col_mean('test_acc_std'),
+            mean_test_acc, col_mean('test_acc_std'), col_mean('test_ap_mean'),
             col_mean('valid_acc_mean'), col_mean('valid_acc_std'),
             col_mean('test_rocauc_mean'), col_mean('test_rocauc_std'),
             col_mean('fit_time_mean'), None, None, None, None,

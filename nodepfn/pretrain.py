@@ -19,6 +19,10 @@ parser.add_argument('--geo_similarity', type=str, default=None,
                     choices=['cosine', 'bilinear', 'mlp'],
                     help='pin the geo prior similarity kernel (default: sample it per graph)')
 parser.add_argument('--eval', action='store_true')
+parser.add_argument('--max_num_classes', type=int, default=20,
+                    help='width of the classification head; the prior draws each graph\'s class '
+                         'count from uniform_int(2, max_num_classes). Downstream evaluation cannot '
+                         'use more classes (or regression bins) than this (default: 20)')
 parser.add_argument('--seed', type=int, default=42,
                     help='random seed for reproducible pretraining (default: 42)')
 parser.add_argument('--resume_epoch', type=int, default=None, help='Resume training from this epoch checkpoint')
@@ -38,6 +42,11 @@ parser.add_argument('--no_recompute_attn', dest='recompute_attn', action='store_
                     help='disable attention gradient checkpointing (faster, more memory)')
 
 args = parser.parse_args()
+
+# model_builder builds a multiclass head + CE loss and asserts max_num_classes > 2;
+# fail here with a readable message instead of deep inside get_model().
+if args.max_num_classes <= 2:
+    parser.error('--max_num_classes must be > 2')
 
 large_datasets = True
 max_samples = 10000 if large_datasets else 5000
@@ -128,7 +137,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     config['recompute_attn'] = False  # gradient checkpointing off: faster backward, uses more memory
 
     config['max_features'] = max_features
-    config['max_num_classes'] = 20
+    config['max_num_classes'] = 100
     config['num_classes'] = uniform_int_sampler_f(2, config['max_num_classes'])
     config['balanced'] = False
     model_string = model_string + '_multiclass'
@@ -202,7 +211,12 @@ if __name__ == "__main__":
     config['efficient_eval_masking'] = True
 
     config['max_features'] = max_features
-    config['max_num_classes'] = 20
+    # Head width, and the per-graph class-count sampler that must track it: the sampler
+    # set in reload_config() was bound to that function's own max_num_classes, so it has
+    # to be re-derived here or the prior can emit labels past the last head output (the
+    # CrossEntropyLoss weight tensor is max_num_classes wide too -- model_builder.py:67).
+    config['max_num_classes'] = args.max_num_classes
+    config['num_classes'] = uniform_int_sampler_f(2, config['max_num_classes'])
 
     config['pos_encoder'] = 'none'
 
@@ -224,7 +238,7 @@ if __name__ == "__main__":
         config['recompute_attn'] = args.recompute_attn
     print(f"[pretrain] epochs={config['epochs']} num_steps={config['num_steps']} "
           f"batch_size={config['batch_size']} aggregate_k_gradients={config['aggregate_k_gradients']} "
-          f"recompute_attn={config['recompute_attn']}")
+          f"recompute_attn={config['recompute_attn']} max_num_classes={config['max_num_classes']}")
 
     # Select the graph prior. 'geo' replaces the MLP + SBM/random prior bag with the
     # casual_graph_generation similarity prior (features, labels and topology from one SCM).

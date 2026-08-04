@@ -219,7 +219,7 @@ if __name__ == "__main__":
                         help='split prediction over the query graph into chunks of this many rows, '
                              'to cap the (train+query) attention/GCN context on large graphs')
     parser.add_argument('--base_model_path', type=str, default='models_ckpts/geo_100_classes')
-    parser.add_argument('--e', type=int, default=50)
+    parser.add_argument('--e', type=int, default=30)
     parser.add_argument('--dim_reduction', type=str, default='none', choices=['none', 'tsvd'])
     parser.add_argument('--n_components', type=int, default=50)
     parser.add_argument('--svd_algorithm', type=str, default='arpack', choices=['arpack', 'randomized'])

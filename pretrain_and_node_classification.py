@@ -20,6 +20,7 @@ import os
 import shlex
 import subprocess
 import sys
+from loguru import logger
 
 import wandb
 
@@ -56,6 +57,10 @@ def main():
     parser.add_argument('--wandb_entity', default=None)
     parser.add_argument('--wandb_run_name', default=None,
                         help='wandb run name (default: model_name)')
+    parser.add_argument('--max_num_classes', type=int, default=20,
+                        help='number of classes to pretrain with (classification-head width); '
+                             'also caps --n_bins in the BlueSky regression baselines, which '
+                             'cannot use more bins than the head has outputs (default: 20)')
     parser.add_argument('--seed', type=int, default=42,
                         help='random seed for reproducible pretraining (default: 42)')
     parser.add_argument('--resume_epoch', type=int, default=None,
@@ -106,6 +111,7 @@ def main():
         pre_cmd = launcher + ['-m', 'nodepfn.pretrain',
                               '--model_name', args.model_name,
                               '--prior', args.prior,
+                              '--max_num_classes', str(args.max_num_classes),
                               '--seed', str(args.seed),
                               '--wandb',
                               '--wandb_project', args.wandb_project,
@@ -140,22 +146,27 @@ def main():
         base_cmd += ['--wandb_entity', args.wandb_entity]
     if args.datasets:
         base_cmd += ['--datasets', *args.datasets]
+    logger.info(f"Running classification baselines + logging to wandb run {run_id}...")
     run(base_cmd, base_env())
-
+    logger.info(f"Finished classification runs {run_id}...")
     # Regression: BlueSky (inductive, continuous targets -- separate runner/metrics).
+    # --max_n_bins: run_bluesky_baseline.sh asks for 100 quantile bins, but a bin becomes a
+    # class at inference and NodePFNClassifier.fit rejects more classes than the checkpoint's
+    # max_num_classes, so the bin count has to be capped at the head we just trained.
     regression_cmd = [sys.executable, 'log_regression_to_wandb.py',
                        '--script', os.path.join(REPO_ROOT, 'run_bluesky_baseline.sh'),
                        '--wandb_run_id', run_id,
                        '--wandb_project', args.wandb_project,
-                       '--base_model_path', base_model_path]
+                       '--base_model_path', base_model_path,
+                       '--max_n_bins', str(args.max_num_classes)]
     if args.wandb_entity:
         regression_cmd += ['--wandb_entity', args.wandb_entity]
     if args.datasets:
         regression_cmd += ['--datasets', *args.datasets]
+    logger.info(f"Starting regression runs {run_id}...")
     run(regression_cmd, base_env())
 
     print(f"\nDone. Pretraining + baselines logged to one wandb run: {run_id}")
-
-
+    logger.info(f"Finished regression runs {run_id}...")
 if __name__ == '__main__':
     main()

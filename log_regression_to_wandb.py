@@ -66,6 +66,29 @@ def override_base_model_path(args, new_path):
     return out + ['--base_model_path', new_path]
 
 
+def cap_n_bins(args, max_bins):
+    """Lower any --n_bins above max_bins (the checkpoint's max_num_classes).
+
+    A quantile bin is a class at inference time, so a command asking for more bins than
+    the model's head is wide fails in NodePFNClassifier.fit. Commands already at or below
+    the cap are left alone; a command with no --n_bins gets the cap made explicit.
+    """
+    out, i, seen = [], 0, False
+    while i < len(args):
+        t = args[i]
+        if t == '--n_bins' and i + 1 < len(args):
+            out += ['--n_bins', str(min(int(args[i + 1]), max_bins))]
+            seen, i = True, i + 2
+            continue
+        if t.startswith('--n_bins='):
+            out.append(f"--n_bins={min(int(t.split('=', 1)[1]), max_bins)}")
+            seen, i = True, i + 1
+            continue
+        out.append(t)
+        i += 1
+    return out if seen else out + ['--n_bins', str(max_bins)]
+
+
 def run_one(dataset, args):
     """Run a single dataset command and return its results dict (or None on failure)."""
     with tempfile.NamedTemporaryFile('r', suffix='.json', delete=False) as tmp:
@@ -107,6 +130,10 @@ def main():
                              'instead of creating a new one')
     parser.add_argument('--base_model_path', default=None,
                         help='override --base_model_path in every dataset command')
+    parser.add_argument('--max_n_bins', type=int, default=None,
+                        help="cap --n_bins in every dataset command at this value, normally the "
+                             "checkpoint's max_num_classes -- a quantile bin is a class at "
+                             'inference, so more bins than the head is wide cannot be predicted')
     parser.add_argument('--dry_run', action='store_true',
                         help='parse and print the commands without running or logging')
     args = parser.parse_args()
@@ -125,7 +152,8 @@ def main():
     init_kwargs = dict(project=args.wandb_project, entity=args.wandb_entity,
                        job_type='regression-baseline',
                        config={'script': args.script, 'n_datasets': len(commands),
-                               'baseline_base_model_path': args.base_model_path})
+                               'baseline_base_model_path': args.base_model_path,
+                               'baseline_max_n_bins': args.max_n_bins})
     if args.wandb_run_id:
         init_kwargs['id'] = args.wandb_run_id
         init_kwargs['resume'] = 'must'
@@ -143,6 +171,8 @@ def main():
     for dataset, cmd_args in commands:
         if args.base_model_path:
             cmd_args = override_base_model_path(cmd_args, args.base_model_path)
+        if args.max_n_bins:
+            cmd_args = cap_n_bins(cmd_args, args.max_n_bins)
         res = run_one(dataset, cmd_args)
         if res is None:
             continue
