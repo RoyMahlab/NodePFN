@@ -236,6 +236,12 @@ if __name__ == "__main__":
         config['aggregate_k_gradients'] = args.aggregate_k_gradients
     if args.recompute_attn is not None:
         config['recompute_attn'] = args.recompute_attn
+    if args.max_num_classes is not None:
+        # Resize the head and widen the prior's class draw together: num_classes is
+        # sampled uniformly in [2, max_num_classes] per dataset (causal prior), and the
+        # geo prior reads config['max_num_classes'] for both its draw and its safety clamp.
+        config['max_num_classes'] = args.max_num_classes
+        config['num_classes'] = uniform_int_sampler_f(2, config['max_num_classes'])
     print(f"[pretrain] epochs={config['epochs']} num_steps={config['num_steps']} "
           f"batch_size={config['batch_size']} aggregate_k_gradients={config['aggregate_k_gradients']} "
           f"recompute_attn={config['recompute_attn']} max_num_classes={config['max_num_classes']}")

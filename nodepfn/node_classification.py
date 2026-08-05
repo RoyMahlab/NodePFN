@@ -118,7 +118,6 @@ def run_experiments(args):
         X = dataset.graph['node_feat']
         edge_index = dataset.graph['edge_index']
         y = dataset.label.squeeze().numpy()
-        
         # Apply multiple smoothing steps
         for step in range(args.smoothing_steps):
             X = conv(X, dataset.graph['edge_index'], dataset.graph['edge_weight'])
@@ -204,7 +203,12 @@ def run_experiments(args):
 
         roc_auc_valid = None
         roc_auc_test = None
-        if len(np.unique(y)) == 2:
+        # Count the LABELLED classes only. load_graphland marks unlabelled nodes with -1
+        # (dataset.py:302-307); those nodes are outside every split mask, so counting them
+        # here would route a genuinely binary dataset (city-reviews: {-1, 0, 1}) into the
+        # multiclass branch, where ovr on 2-column probabilities raises and both ROC-AUC and
+        # average precision are silently lost.
+        if len(np.unique(y[y >= 0])) == 2:
             test_ap.append(average_precision_score(y_test, prob_test[:, 1]))
             roc_auc_valid = roc_auc_score(y_valid, prob_valid[:, 1])
             roc_auc_test = roc_auc_score(y_test, prob_test[:, 1])
@@ -212,7 +216,8 @@ def run_experiments(args):
             try:
                 roc_auc_valid = roc_auc_score(y_valid, prob_valid, multi_class='ovr')
                 roc_auc_test = roc_auc_score(y_test, prob_test, multi_class='ovr')
-            except:
+            except Exception as e:  # keep the sweep going, but say why the metric is missing
+                print(f"WARNING: multiclass ROC-AUC unavailable ({type(e).__name__}: {e})")
                 roc_auc_valid = None
                 roc_auc_test = None
 

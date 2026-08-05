@@ -62,25 +62,34 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     rotate = hyperparameters.get('rotate_normalized_labels', True)
     # The model's classification head has exactly max_num_classes outputs and its
     # CrossEntropyLoss weight tensor is the same width, so a graph that produced more
-    # classes would push targets out of bounds. sample_config draws n_classes up to 20;
-    # cap it at the head width (n_classes does not affect GraphConfig.is_valid()).
+    # classes would push targets out of bounds. We pass max_num_classes into sample_config
+    # so its n_classes draw spans the full head width, and clamp afterwards as a safety net
+    # (n_classes does not affect GraphConfig.is_valid()).
     max_num_classes = hyperparameters.get('max_num_classes')
-    # Topology-safe analogue of flexible_categorical's check_is_compatible: ensure the
-    # context split [:single_eval_pos] and the query split [single_eval_pos:] expose the
-    # same (>1) classes, so every queried class has in-context evidence. We cannot permute
-    # nodes to fix a bad split (the SCM topology in edge_index is tied to node positions and
-    # is shared across the batch), so we regenerate the whole graph instead. Off by default.
-    
-    # check_compat = hyperparameters.get('check_is_compatible', False) and single_eval_pos
+    # Topology-safe analogue of flexible_categorical's check_is_compatible: ensure every
+    # queried (eval) class also appears in the context split [:single_eval_pos], so it has
+    # in-context evidence. We cannot permute nodes to fix a bad split (the SCM topology in
+    # edge_index is tied to node positions and is shared across the batch), so we regenerate
+    # the whole graph instead.
+    #
+    # 'subset' (default) matches flexible_categorical: eval classes must be a subset of context
+    # classes. The old 'exact' criterion (identical class sets) is almost never satisfiable past
+    # a handful of classes, so it silently dropped high-cardinality graphs - the same collapse we
+    # fixed in the causal prior. Set compat_mode='exact' to restore the strict check.
     check_compat = True
     max_retries = int(hyperparameters.get('compatible_max_retries', 10))
+    compat_mode = os.environ.get('NODEPFN_COMPAT', hyperparameters.get('compat_mode', 'subset'))
 
     def _is_compatible(y_raw):
         train_classes = torch.unique(y_raw[:single_eval_pos])
         eval_classes = torch.unique(y_raw[single_eval_pos:])
-        return (train_classes.numel() > 1
-                and train_classes.numel() == eval_classes.numel()
-                and bool((train_classes == eval_classes).all()))
+        if compat_mode == 'exact':
+            return (train_classes.numel() > 1
+                    and train_classes.numel() == eval_classes.numel()
+                    and bool((train_classes == eval_classes).all()))
+        # 'subset'/'stratify': every eval class must appear in context, and >1 class present.
+        return (eval_classes.numel() > 1
+                and bool(torch.isin(eval_classes, train_classes).all()))
 
     # One consistent graph with exactly seq_len nodes. Seed the hyperparameter stream from
     # the (globally seeded) torch RNG so the run honours set_seed while still varying
@@ -89,7 +98,8 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     for _ in range(max_retries if check_compat else 1):
         seed = int(torch.randint(0, 2 ** 31 - 1, (1,)).item())
         rng = np.random.default_rng(seed)
-        cfg = sample_config(rng=rng, n_nodes=int(seq_len), **fixed)
+        cfg = sample_config(rng=rng, n_nodes=int(seq_len),
+                            max_num_classes=max_num_classes, **fixed)
         if max_num_classes is not None:
             cfg.n_classes = min(cfg.n_classes, int(max_num_classes))
         data = CausalGraphGenerator(cfg).generate()

@@ -470,7 +470,24 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
     if seed is not None:
         torch.manual_seed(seed)
 
-    feature_shift_configurations = torch.randperm(eval_xs.shape[2]) if feature_shift_decoder else [0]
+    # The feature-shift rotation is applied to the POST-preprocessing tensor, so it has to be
+    # drawn from that width, not from the raw one: preprocess_input caps the feature axis at
+    # max_features and drops features that are constant across the context. Drawing from
+    # eval_xs.shape[2] makes every shift >= the preprocessed width a silent no-op (the
+    # cat below degenerates to the identity), collapsing distinct ensemble members into
+    # duplicates -- ~22% of shifts on a 128-feature dataset, ~74% on a 384-feature one.
+    # Preprocessing the first configuration here (rather than lazily in the loop) costs
+    # nothing: the loop's cache picks it up on its first iteration.
+    eval_xs_transformed = {}
+    if feature_shift_decoder:
+        first_preprocess = preprocess_transform_configurations[0]
+        first_transformed = preprocess_input(eval_xs.clone(), preprocess_transform=first_preprocess)
+        if no_grad:
+            first_transformed = first_transformed.detach()
+        eval_xs_transformed[first_preprocess] = first_transformed
+        feature_shift_configurations = torch.randperm(first_transformed.shape[-1])
+    else:
+        feature_shift_configurations = [0]
     class_shift_configurations = torch.randperm(len(torch.unique(eval_ys))) if multiclass_decoder == 'permutation' else [0]
 
     ensemble_configurations = list(itertools.product(class_shift_configurations, feature_shift_configurations))
@@ -485,7 +502,6 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
 
     output = None
 
-    eval_xs_transformed = {}
     inputs, labels = [], []
     start = time.time()
     for ensemble_configuration in ensemble_configurations:
@@ -506,7 +522,11 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
 
         eval_ys_ = ((eval_ys_ + class_shift_configuration) % num_classes).float()
 
-        eval_xs_ = torch.cat([eval_xs_[..., feature_shift_configuration:],eval_xs_[..., :feature_shift_configuration]],dim=-1)
+        # Wrap into range defensively: the shifts were drawn from the first preprocess
+        # configuration's width, and a second configuration that dropped a different number of
+        # constant features would otherwise silently turn this rotation back into a no-op.
+        shift = int(feature_shift_configuration) % eval_xs_.shape[-1]
+        eval_xs_ = torch.cat([eval_xs_[..., shift:],eval_xs_[..., :shift]],dim=-1)
 
         # Extend X
         if extend_features:

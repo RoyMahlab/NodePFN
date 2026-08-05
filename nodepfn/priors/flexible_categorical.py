@@ -26,6 +26,31 @@ def class_sampler_f(min_, max_):
         return 2
     return s
 
+
+def _stratified_split_perm(y_col, sep):
+    """Return a node permutation placing >=1 sample of every class in the context
+    split [:sep], so eval classes are a subset of context classes (ICL-compatible).
+
+    Falls back to a partial reservation when the class count exceeds the context size
+    (then the downstream subset check fails and the column is retried / dropped).
+    """
+    device = y_col.device
+    buckets = {}
+    for i, c in enumerate(y_col.tolist()):
+        buckets.setdefault(c, []).append(i)
+    reserved, pool = [], []
+    for idxs in buckets.values():
+        reserved.append(idxs[0])   # one guaranteed context sample per class
+        pool.extend(idxs[1:])
+    if pool:
+        pool = [pool[i] for i in torch.randperm(len(pool)).tolist()]
+    need = sep - len(reserved)
+    if need >= 0:
+        perm = reserved + pool[:need] + pool[need:]
+    else:
+        perm = reserved[:sep] + reserved[sep:] + pool
+    return torch.tensor(perm, dtype=torch.long, device=device)
+
 class RegressionNormalized(nn.Module):
     def __init__(self):
         super().__init__()
@@ -213,14 +238,41 @@ class FlexibleCategorical(torch.nn.Module):
             print('Nans in target!')
 
         if self.h['check_is_compatible']:
+            import os as _os
+            # Compatibility policy (how strict the context/eval class split must be):
+            #   'subset'  (default): every queried (eval) class must appear in context. This is
+            #             the real ICL requirement and lets high-cardinality datasets survive
+            #             instead of collapsing to a single ignored class. Same permute-on-retry
+            #             path as the original code.
+            #   'exact':  original behaviour - context and eval must hold the identical class set
+            #             (almost never satisfiable past ~5 classes, so multiclass datasets get
+            #             dropped to -100). Kept for reproducing old runs.
+            #   'stratify': force >=1 sample of every class into the context split so the realized
+            #             class count tracks the requested draw. NOTE: it permutes every dataset,
+            #             but edge_index is built earlier from pre-permutation node order, so SBM
+            #             topology is left inconsistent - needs edges regenerated post-split before
+            #             this is correct for graph use. Opt-in / experimental.
+            _compat_mode = _os.environ.get('NODEPFN_COMPAT', self.h.get('compat_mode', 'subset'))
+            _max_retries = int(self.h.get('compatible_max_retries', 10))
+            sep = self.args['single_eval_pos']
             for b in range(y.shape[1]):
                 is_compatible, N = False, 0
-                while not is_compatible and N < 10:
-                    targets_in_train = torch.unique(y[:self.args['single_eval_pos'], b], sorted=True)
-                    targets_in_eval = torch.unique(y[self.args['single_eval_pos']:, b], sorted=True)
+                while not is_compatible and N < _max_retries:
+                    if _compat_mode == 'stratify':
+                        # Arrange nodes so the context split [:sep] holds >=1 sample of every
+                        # class; then eval classes are guaranteed a subset of context classes.
+                        perm = _stratified_split_perm(y[:, b], sep)
+                        x[:, b], y[:, b] = x[perm, b], y[perm, b]
+                    targets_in_train = torch.unique(y[:sep, b], sorted=True)
+                    targets_in_eval = torch.unique(y[sep:, b], sorted=True)
 
-                    is_compatible = len(targets_in_train) == len(targets_in_eval) and (
-                                targets_in_train == targets_in_eval).all() and len(targets_in_train) > 1
+                    if _compat_mode in ('subset', 'stratify'):
+                        # ICL only needs every queried (eval) class to appear in context.
+                        is_compatible = (len(targets_in_eval) > 1
+                                         and bool(torch.isin(targets_in_eval, targets_in_train).all()))
+                    else:
+                        is_compatible = len(targets_in_train) == len(targets_in_eval) and (
+                                    targets_in_train == targets_in_eval).all() and len(targets_in_train) > 1
 
                     if not is_compatible:
                         randperm = torch.randperm(x.shape[0])
