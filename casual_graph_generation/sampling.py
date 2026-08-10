@@ -31,6 +31,7 @@ prior and have no nodepfn counterpart, so they keep their cell [23] dashboard ra
 """
 from __future__ import annotations
 
+import json
 import math
 from typing import Optional
 
@@ -83,8 +84,7 @@ def _sample_meta_gamma(rng, max_alpha, max_scale, lower_bound, round):
     """lower_bound + [round] Gamma(shape=e^a, scale=scale/e^a), a~U(0,ln max_alpha), scale~U(0,max_scale)."""
     alpha = rng.uniform(0.0, math.log(max_alpha))
     scale = rng.uniform(0.0, max_scale)
-    shape = math.exp(alpha)
-    value = float(rng.gamma(shape, scale / shape))
+    value = float(rng.gamma(alpha, scale))
     if round:
         return lower_bound + int(np.round(value))
     return lower_bound + value
@@ -123,7 +123,7 @@ def _stepped_int(rng, lo: int, hi: int, step: int) -> int:
 
 
 def sample_config(rng=None, seed: int | None = None, max_tries: int = 10_000,
-                  max_num_classes: int | None = None, **fixed) -> GraphConfig:
+                  max_num_classes: int | None = None, config_path: str | None = None, **fixed) -> GraphConfig:
     """Draw one :class:`GraphConfig` from the nodepfn prior distributions.
 
     SCM/dataset fields follow ``PRIOR_DISTRIBUTIONS`` (the nodepfn causal prior); the
@@ -145,31 +145,37 @@ def sample_config(rng=None, seed: int | None = None, max_tries: int = 10_000,
     **fixed :
         Pin any field to a constant (e.g. ``similarity='cosine'``); overrides the draw.
     """
+    if config_path is not None:
+        with open(config_path, 'r') as f:
+            prior_distributions = json.load(f)
+        
+    # sim_acc_choices = {acc_name: SIM_ACT_CHOICES[acc_name] for acc_name in prior_distributions['symmetric_activations']}
+    
     if rng is None:
         rng = np.random.default_rng(seed)
 
     # The n_classes distribution is bounded by MAX_NUM_CLASSES by default; let the
     # caller widen it to the model head width so high-cardinality graphs get sampled.
-    n_classes_spec = PRIOR_DISTRIBUTIONS['n_classes']
+    n_classes_spec = prior_distributions['n_classes']
     if max_num_classes is not None:
         n_classes_spec = {**n_classes_spec, 'max': int(max_num_classes)}
-
+    
     for _ in range(max_tries):
         cfg = GraphConfig(
             # --- nodepfn causal-prior distributions ---
-            n_layers      = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_layers']),
-            hidden        = _sample_prior(rng, PRIOR_DISTRIBUTIONS['hidden']),
-            n_geo         = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_geo']),
-            drop_rate     = _sample_prior(rng, PRIOR_DISTRIBUTIONS['drop_rate']),
-            n_features    = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_features']),
-            n_classes     = _sample_prior(rng, n_classes_spec),
+            n_layers      = _sample_prior(rng, prior_distributions['n_layers']),
+            hidden        = _sample_prior(rng, prior_distributions['hidden']),
+            n_geo         = _sample_prior(rng, prior_distributions['n_geo']),
+            drop_rate     = _sample_prior(rng, prior_distributions['drop_rate']),
+            n_features    = _sample_prior(rng, prior_distributions['n_features']),
+            n_classes     = np.clip(_sample_prior(rng, n_classes_spec), a_min=n_classes_spec['lower_bound'], a_max=int(max_num_classes)),
             # --- geometric-similarity-only fields (cell [23] dashboard ranges) ---
-            n_nodes       = _sample_prior(rng, PRIOR_DISTRIBUTIONS['n_nodes']),
-            similarity    = str(rng.choice(SIMILARITY_CHOICES)),
+            n_nodes       = _sample_prior(rng, prior_distributions['n_nodes']),
+            similarity    = str(rng.choice(prior_distributions['similarity'])),
             sim_threshold = float(rng.uniform(-1.0, 1.0)),
-            normalize     = str(rng.choice(FRAME_CHOICES)),
-            sim_out_dim   = _stepped_int(rng, *SLIDER_RANGES['sim_out_dim']),
-            sim_act       = str(rng.choice(SIM_ACT_CHOICES)),
+            normalize     = str(rng.choice(prior_distributions['frame_choices'])),
+            sim_out_dim   = _stepped_int(rng, *tuple(prior_distributions['slider_ranges']['sim_out_dim'])),
+            sim_act       = str(rng.choice(prior_distributions['symmetric_activations'])),
         )
         for key, value in fixed.items():
             if not hasattr(cfg, key):

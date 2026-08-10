@@ -51,7 +51,7 @@ def _normalize_labels(y: torch.Tensor, rotate: bool = True) -> torch.Tensor:
 
 @torch.no_grad()
 def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=default_device,
-              single_eval_pos=None, batch_size_per_gp_sample=None, **kwargs):
+              single_eval_pos=None, config_path: str | None = None, batch_size_per_gp_sample=None, **kwargs):
     """Draw one geometric-similarity graph and return (x, y, target_y, edge_index).
 
     x: (T, B, num_features)   y, target_y: (T, B)   edge_index: (2, E) over T nodes.
@@ -99,7 +99,7 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
         seed = int(torch.randint(0, 2 ** 31 - 1, (1,)).item())
         rng = np.random.default_rng(seed)
         cfg = sample_config(rng=rng, n_nodes=int(seq_len),
-                            max_num_classes=max_num_classes, **fixed)
+                            max_num_classes=max_num_classes, config_path=config_path, **fixed)
         if max_num_classes is not None:
             cfg.n_classes = min(cfg.n_classes, int(max_num_classes))
         data = CausalGraphGenerator(cfg).generate()

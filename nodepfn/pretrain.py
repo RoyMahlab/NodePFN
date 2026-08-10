@@ -18,6 +18,9 @@ parser.add_argument('--prior', type=str, default='geo', choices=['geo', 'causal'
 parser.add_argument('--geo_similarity', type=str, default=None,
                     choices=['cosine', 'bilinear', 'mlp'],
                     help='pin the geo prior similarity kernel (default: sample it per graph)')
+parser.add_argument('--geo_config_path', type=str, default=None,
+                    help='JSON file overriding the prior distributions sample_config draws from '
+                         '(default: the built-in PRIOR_DISTRIBUTIONS); --prior geo only')
 parser.add_argument('--eval', action='store_true')
 parser.add_argument('--max_num_classes', type=int, default=20,
                     help='width of the classification head; the prior draws each graph\'s class '
@@ -84,7 +87,7 @@ def print_models(model_string):
                 print(os.path.join(base_path, f'models_ckpts/prior_diff_real_checkpoint{model_string}_n_{i}_epoch_{e}.ckpt'))
         print()
 
-def train_function(config_sample, add_name='', resume_epoch=None):
+def train_function(config_sample, add_name='', resume_epoch=None, config_path=None):
     start_time = time.time()
     N_epochs_to_save = 10
     maximum_runtime = 30
@@ -120,6 +123,7 @@ def train_function(config_sample, add_name='', resume_epoch=None):
         verbose=1,
         state_dict=state_dict,
         epoch_callback=save_callback,
+        config_path=config_path,
         # start_epoch=start_epoch
     )
     # If get_model does not support start_epoch, user should handle in their training loop
@@ -257,5 +261,6 @@ if __name__ == "__main__":
     print(f"[pretrain] prior={args.prior} prior_type={config['prior_type']}")
 
     config_sample = evaluate_hypers(config)
-
-    model = train_function(config_sample, add_name=model_name, resume_epoch=args.resume_epoch)
+    # import pdb; pdb.set_trace()
+    model = train_function(config_sample, add_name=model_name, resume_epoch=args.resume_epoch,
+                           config_path=args.geo_config_path)

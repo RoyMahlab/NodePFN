@@ -53,6 +53,10 @@ def main():
     parser.add_argument('--geo_similarity', type=str, default=None,
                         choices=['cosine', 'bilinear', 'mlp'],
                         help='pin the geo prior similarity kernel (default: sample it per graph)')
+    parser.add_argument('--geo_config_path', default=None,
+                        help='JSON file overriding the prior distributions sample_config draws '
+                             'from (default: the built-in PRIOR_DISTRIBUTIONS); --prior geo only. '
+                             'Relative paths resolve against the repo root.')
     parser.add_argument('--wandb_project', default='NodePFN')
     parser.add_argument('--wandb_entity', default=None)
     parser.add_argument('--wandb_run_name', default=None,
@@ -118,6 +122,8 @@ def main():
                               '--wandb_run_name', run_name]
         if args.geo_similarity is not None:
             pre_cmd += ['--geo_similarity', args.geo_similarity]
+        if args.geo_config_path is not None:
+            pre_cmd += ['--geo_config_path', args.geo_config_path]
         if args.wandb_entity:
             pre_cmd += ['--wandb_entity', args.wandb_entity]
         if args.resume_epoch is not None:

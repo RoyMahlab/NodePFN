@@ -189,7 +189,7 @@ def get_meta_gp_prior_hyperparameters(config):
     return config
 
 
-def get_model(config, device, should_train=True, verbose=False, state_dict=None, epoch_callback=None):
+def get_model(config, device, should_train=True, verbose=False, state_dict=None, epoch_callback=None, config_path=None):
     import priors as priors
     from train import train, Losses
     extra_kwargs = {}
@@ -227,6 +227,10 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             'geo_fixed_hparams': config.get('geo_fixed_hparams', {}),
             'verbose': config.get('verbose', False),
         }
+        # get_batch takes config_path as an explicit parameter (not via `hyperparameters`),
+        # so it travels in extra_kwargs -> extra_prior_kwargs_dict -> the DataLoader's
+        # get_batch kwargs, which are re-spread on every step.
+        extra_kwargs['config_path'] = config_path
         model_proto = priors.geo_similarity
     elif config['prior_type'] == 'prior_bag':
         # Prior bag combines priors
