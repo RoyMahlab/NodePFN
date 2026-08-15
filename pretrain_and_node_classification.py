@@ -97,7 +97,7 @@ def main():
 
     if args.skip_pretrain:
         if not args.wandb_run_id:
-            raise SystemExit("--skip_pretrain requires --wandb_run_id")
+            raise SystemExit("--skip_pretrain requires ")
         run_id = args.wandb_run_id
     else:
         run_id = args.wandb_run_id or wandb.util.generate_id()
