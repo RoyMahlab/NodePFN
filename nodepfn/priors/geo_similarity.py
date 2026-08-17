@@ -35,6 +35,33 @@ if _REPO_ROOT not in sys.path:
 from casual_graph_generation import CausalGraphGenerator, sample_config  # noqa: E402
 
 
+def _stratified_split_perm(y: torch.Tensor, sep: int) -> torch.Tensor:
+    """Return a node permutation placing >=1 sample of every class in the context split
+    [:sep], so the eval classes are a subset of the context classes (ICL-compatible).
+
+    Unlike flexible_categorical (whose edge_index is already built from pre-permutation
+    node ids by the time it repairs a split), the geo prior still holds the DENSE
+    adjacency here, so the caller can relabel the topology consistently with
+    ``A[perm][:, perm]`` -- see the repair branch in get_batch.
+
+    Falls back to a partial reservation when the class count exceeds the context size
+    (sep >= min_eval_pos >= max_num_classes makes that unreachable in practice).
+    """
+    buckets: dict[int, list[int]] = {}
+    for i, c in enumerate(y.tolist()):
+        buckets.setdefault(c, []).append(i)
+    reserved = [idxs[0] for idxs in buckets.values()]     # one guaranteed context sample per class
+    pool = [i for idxs in buckets.values() for i in idxs[1:]]
+    if pool:
+        pool = [pool[i] for i in torch.randperm(len(pool)).tolist()]
+    need = sep - len(reserved)
+    if need >= 0:
+        perm = reserved + pool[:need] + pool[need:]
+    else:
+        perm = reserved[:sep] + reserved[sep:] + pool
+    return torch.tensor(perm, dtype=torch.long, device=y.device)
+
+
 def _normalize_labels(y: torch.Tensor, rotate: bool = True) -> torch.Tensor:
     """Remap labels to contiguous 0..C-1 over the classes actually present, optionally
     applying a random cyclic shift (matches flexible_categorical's label normalisation)."""
@@ -55,6 +82,11 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     """Draw one geometric-similarity graph and return (x, y, target_y, edge_index).
 
     x: (T, B, num_features)   y, target_y: (T, B)   edge_index: (2, E) over T nodes.
+
+    Relevant hyperparameters: ``stratify_p`` (probability of repairing an incompatible
+    context/eval split in place instead of regenerating the graph; 0 = old behaviour),
+    ``compatible_max_retries``, ``compat_mode``, ``max_num_classes``,
+    ``rotate_normalized_labels``, ``geo_fixed_hparams``, ``verbose``.
     """
     hyperparameters = hyperparameters or {}
     # Optional pins for the sampled config, e.g. {'similarity': 'cosine'}.
@@ -68,9 +100,21 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     max_num_classes = hyperparameters.get('max_num_classes')
     # Topology-safe analogue of flexible_categorical's check_is_compatible: ensure every
     # queried (eval) class also appears in the context split [:single_eval_pos], so it has
-    # in-context evidence. We cannot permute nodes to fix a bad split (the SCM topology in
-    # edge_index is tied to node positions and is shared across the batch), so we regenerate
-    # the whole graph instead.
+    # in-context evidence.
+    #
+    # An incompatible draw is REPAIRED with probability `stratify_p` (default 1.0) by
+    # permuting nodes so the context holds >=1 sample of every class, and permuting the
+    # dense adjacency the same way (`A[perm][:, perm]`) so the topology stays consistent --
+    # the graph is still dense here, edge_index is only built at the end. With probability
+    # 1 - stratify_p (and while retries remain) the whole graph is regenerated instead,
+    # which is what this prior used to do unconditionally.
+    #
+    # Repairing rather than rejecting matters for the class prior: regeneration redraws
+    # n_classes too, and since acceptance falls off with class count, rejection reweights
+    # the configured n_classes distribution towards low cardinalities (measured: mean
+    # realized classes 23 against a configured mean of 51, and ~7% of graphs accepted with
+    # queried classes that never appear in the context). Repairing leaves the configured
+    # distribution intact and costs one draw instead of ~3.3.
     #
     # 'subset' (default) matches flexible_categorical: eval classes must be a subset of context
     # classes. The old 'exact' criterion (identical class sets) is almost never satisfiable past
@@ -79,6 +123,11 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     check_compat = True
     max_retries = int(hyperparameters.get('compatible_max_retries', 10))
     compat_mode = os.environ.get('NODEPFN_COMPAT', hyperparameters.get('compat_mode', 'subset'))
+    # Probability of repairing an incompatible split in place instead of regenerating.
+    # stratify_p=0 restores the old regenerate-only behaviour.
+    stratify_p = float(os.environ.get('NODEPFN_STRATIFY_P',
+                                      hyperparameters.get('stratify_p', 1.0)))
+    can_stratify = single_eval_pos is not None and compat_mode != 'exact'
 
     def _is_compatible(y_raw):
         train_classes = torch.unique(y_raw[:single_eval_pos])
@@ -95,6 +144,7 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     # the (globally seeded) torch RNG so the run honours set_seed while still varying
     # graph-to-graph; the graph internals use the torch/np globals.
     cfg = data = None
+    stratified = False
     for _ in range(max_retries if check_compat else 1):
         seed = int(torch.randint(0, 2 ** 31 - 1, (1,)).item())
         rng = np.random.default_rng(seed)
@@ -105,6 +155,15 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
         data = CausalGraphGenerator(cfg).generate()
         if not check_compat or _is_compatible(data['y']):
             break
+        if can_stratify and float(torch.rand(1).item()) < stratify_p:
+            # Repair in place: reserve one node per class for the context split and relabel
+            # nodes, features and the dense adjacency with the same permutation.
+            perm = _stratified_split_perm(data['y'], int(single_eval_pos))
+            data = {**data, 'X': data['X'][perm], 'y': data['y'][perm],
+                    'A': data['A'][perm][:, perm]}
+            if _is_compatible(data['y']):     # only unreachable when n_classes > single_eval_pos
+                stratified = True
+                break
     else:
         if hyperparameters.get('verbose'):
             print(f'[geo_similarity] no compatible split after {max_retries} draws; '
@@ -139,7 +198,8 @@ def get_batch(batch_size, seq_len, num_features, hyperparameters=None, device=de
     if hyperparameters.get('verbose'):
         print(f'[geo_similarity] T={seq_len} feat={n_feat}->{num_features} '
               f'classes={int(y.max().item()) + 1} edges={edge_index.shape[1]} '
-              f'sim={cfg.similarity} tau={cfg.sim_threshold:.2f} frame={cfg.normalize}')
+              f'sim={cfg.similarity} tau={cfg.sim_threshold:.2f} frame={cfg.normalize} '
+              f'stratified={stratified}')
 
     return x, y, y, edge_index
 

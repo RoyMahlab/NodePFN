@@ -57,6 +57,12 @@ def main():
                         help='JSON file overriding the prior distributions sample_config draws '
                              'from (default: the built-in PRIOR_DISTRIBUTIONS); --prior geo only. '
                              'Relative paths resolve against the repo root.')
+    parser.add_argument('--geo_stratify_p', type=float, default=None,
+                        help='probability of repairing an incompatible context/eval split in '
+                             'place (stratified node permutation + matching adjacency '
+                             'permutation) instead of regenerating the graph; 0 = regenerate '
+                             'only, which reweights the configured n_classes distribution '
+                             'towards low class counts (default: 1.0); --prior geo only')
     parser.add_argument('--wandb_project', default='NodePFN')
     parser.add_argument('--wandb_entity', default=None)
     parser.add_argument('--wandb_run_name', default=None,
@@ -124,6 +130,8 @@ def main():
             pre_cmd += ['--geo_similarity', args.geo_similarity]
         if args.geo_config_path is not None:
             pre_cmd += ['--geo_config_path', args.geo_config_path]
+        if args.geo_stratify_p is not None:
+            pre_cmd += ['--geo_stratify_p', str(args.geo_stratify_p)]
         if args.wandb_entity:
             pre_cmd += ['--wandb_entity', args.wandb_entity]
         if args.resume_epoch is not None:

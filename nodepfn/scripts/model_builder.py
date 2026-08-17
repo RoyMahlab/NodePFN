@@ -225,6 +225,10 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             'max_num_classes': config['max_num_classes'],
             'rotate_normalized_labels': config.get('rotate_normalized_labels', True),
             'geo_fixed_hparams': config.get('geo_fixed_hparams', {}),
+            # Repair an incompatible context/eval split in place (stratified node
+            # permutation + matching adjacency permutation) instead of regenerating the
+            # graph; 0.0 restores the regenerate-only behaviour.
+            'stratify_p': config.get('geo_stratify_p', 1.0),
             'verbose': config.get('verbose', False),
         }
         # get_batch takes config_path as an explicit parameter (not via `hyperparameters`),

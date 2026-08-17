@@ -21,6 +21,12 @@ parser.add_argument('--geo_similarity', type=str, default=None,
 parser.add_argument('--geo_config_path', type=str, default=None,
                     help='JSON file overriding the prior distributions sample_config draws from '
                          '(default: the built-in PRIOR_DISTRIBUTIONS); --prior geo only')
+parser.add_argument('--geo_stratify_p', type=float, default=1.0,
+                    help='probability of repairing an incompatible context/eval split in place '
+                         '(stratified node permutation, adjacency permuted with it) instead of '
+                         'regenerating the graph; 0 = regenerate only, which reweights the '
+                         'configured n_classes distribution towards low class counts '
+                         '(default: 1.0); --prior geo only')
 parser.add_argument('--eval', action='store_true')
 parser.add_argument('--max_num_classes', type=int, default=20,
                     help='width of the classification head; the prior draws each graph\'s class '
@@ -256,9 +262,11 @@ if __name__ == "__main__":
         config['prior_type'] = 'geo_similarity'
         config['differentiable'] = False   # geo samples its own hyperparameters internally
         config['flexible'] = False         # geo does its own normalisation / label handling
+        config['geo_stratify_p'] = args.geo_stratify_p
         if args.geo_similarity is not None:
             config['geo_fixed_hparams'] = {'similarity': args.geo_similarity}
-    print(f"[pretrain] prior={args.prior} prior_type={config['prior_type']}")
+    print(f"[pretrain] prior={args.prior} prior_type={config['prior_type']}"
+          + (f" geo_stratify_p={args.geo_stratify_p}" if args.prior == 'geo' else ''))
 
     config_sample = evaluate_hypers(config)
     # import pdb; pdb.set_trace()

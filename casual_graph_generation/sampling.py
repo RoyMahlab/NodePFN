@@ -64,7 +64,9 @@ MIN_NUM_CLASSES = 2     # pretrain.py: num_classes lower bound (uniform_int_samp
 N_CLASSES_DIST = {'distribution': 'uniform_int', 'min': MIN_NUM_CLASSES, 'max': MAX_NUM_CLASSES}
 
 # --- Distributions copied verbatim from nodepfn (model_configs.get_diff_causal /
-#     flexible_categorical / pretrain.py). Field names are the casual_graph_generation ones. ---
+#     flexible_categorical / pretrain.py). Field names are the casual_graph_generation ones.
+#     Supported 'distribution' values (see _sample_prior): 'meta_gamma', 'meta_beta',
+#     'uniform_int', 'constant', and 'pmf' (explicit weighted table, see _sample_pmf). ---
 PRIOR_DISTRIBUTIONS = {
     'n_layers':   {'distribution': 'meta_gamma', 'max_alpha': 2, 'max_scale': 3,   'lower_bound': 2, 'round': True},  # num_layers
     'hidden':     {'distribution': 'meta_gamma', 'max_alpha': 3, 'max_scale': 100, 'lower_bound': 4, 'round': True},  # prior_mlp_hidden_dim
@@ -102,6 +104,33 @@ def _sample_uniform_int(rng, lo, hi):
     return int(round(float(rng.uniform(lo, hi))))
 
 
+def _sample_pmf(rng, spec):
+    """Explicit probability table, for shaping a field the sampled draw would otherwise
+    leave uniform (e.g. tilting ``n_classes`` towards high cardinalities).
+
+    Two forms; ``weights`` is optional (default uniform over the entries) and is
+    normalised internally, so relative numbers are enough:
+
+        {'distribution': 'pmf', 'values': [2, 5, 10], 'weights': [1, 2, 3]}
+            -> draw one of the listed values
+        {'distribution': 'pmf', 'bins': [[2, 9], [10, 100]], 'weights': [1, 3]}
+            -> draw a bin by weight, then round(U(lo, hi)) inside it (bounds inclusive)
+    """
+    entries = spec.get('bins') or spec.get('values')
+    if not entries:
+        raise ValueError("pmf spec needs a non-empty 'bins' or 'values' list")
+    weights = np.asarray(spec.get('weights', np.ones(len(entries))), dtype=float)
+    if weights.shape != (len(entries),):
+        raise ValueError(f'pmf weights ({weights.size}) must match the number of '
+                         f'entries ({len(entries)})')
+    if (weights < 0).any() or weights.sum() <= 0:
+        raise ValueError('pmf weights must be non-negative with a positive sum')
+    chosen = entries[int(rng.choice(len(entries), p=weights / weights.sum()))]
+    if spec.get('bins'):
+        return _sample_uniform_int(rng, *tuple(chosen))
+    return chosen
+
+
 def _sample_prior(rng, spec):
     dist = spec['distribution']
     if dist == 'meta_gamma':
@@ -111,6 +140,8 @@ def _sample_prior(rng, spec):
         return _sample_meta_beta(rng, spec['scale'], spec['min'], spec['max'])
     if dist == 'uniform_int':
         return _sample_uniform_int(rng, spec['min'], spec['max'])
+    if dist == 'pmf':
+        return _sample_pmf(rng, spec)
     if dist == 'constant':
         return spec['value']
     raise ValueError(f'unsupported prior distribution: {dist!r}')
@@ -156,10 +187,14 @@ def sample_config(rng=None, seed: int | None = None, max_tries: int = 10_000,
 
     # The n_classes distribution is bounded by MAX_NUM_CLASSES by default; let the
     # caller widen it to the model head width so high-cardinality graphs get sampled.
+    # ('max' only means anything to the uniform_int form; a 'pmf' spec carries its own
+    # support and is capped by the clip below instead.)
     n_classes_spec = prior_distributions['n_classes']
-    if max_num_classes is not None:
-        n_classes_spec = {**n_classes_spec, 'max': int(max_num_classes)}
-    
+    n_classes_cap = int(max_num_classes) if max_num_classes is not None else MAX_NUM_CLASSES
+    n_classes_floor = n_classes_spec.get('lower_bound', MIN_NUM_CLASSES)
+    if max_num_classes is not None and n_classes_spec['distribution'] == 'uniform_int':
+        n_classes_spec = {**n_classes_spec, 'max': n_classes_cap}
+
     for _ in range(max_tries):
         cfg = GraphConfig(
             # --- nodepfn causal-prior distributions ---
@@ -168,7 +203,7 @@ def sample_config(rng=None, seed: int | None = None, max_tries: int = 10_000,
             n_geo         = _sample_prior(rng, prior_distributions['n_geo']),
             drop_rate     = _sample_prior(rng, prior_distributions['drop_rate']),
             n_features    = _sample_prior(rng, prior_distributions['n_features']),
-            n_classes     = np.clip(_sample_prior(rng, n_classes_spec), a_min=n_classes_spec['lower_bound'], a_max=int(max_num_classes)),
+            n_classes     = int(np.clip(_sample_prior(rng, n_classes_spec), a_min=n_classes_floor, a_max=n_classes_cap)),
             # --- geometric-similarity-only fields (cell [23] dashboard ranges) ---
             n_nodes       = _sample_prior(rng, prior_distributions['n_nodes']),
             similarity    = str(rng.choice(prior_distributions['similarity'])),
