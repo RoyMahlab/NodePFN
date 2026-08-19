@@ -14,11 +14,9 @@
         "round": true
     },
     "n_geo": {
-        "distribution": "meta_gamma",
-    "max_alpha": 3,
-        "max_scale": 7,
-        "lower_bound": 2,
-        "round": true
+        "distribution": "uniform_int",
+        "min": 4,
+        "max": 16
     },
     "drop_rate": {
         "distribution": "meta_beta",
