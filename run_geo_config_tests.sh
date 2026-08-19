@@ -1,16 +1,18 @@
 #!/bin/bash
 
 CONFIG_PATH=configs
-NUM_STEPS=2048
+NUM_STEPS=8096
+EPOCHS=30
+GPUS=8
 
-# uv run python pretrain_and_node_classification.py \
-#     --model_name full_baseline \
-#     --prior causal \
-#     --gpus 1 \
-#     --epochs 50 \
-#     --num_steps $NUM_STEPS \
-#     --batch_size 1 \
-#     --max_num_classes 100
+uv run python pretrain_and_node_classification.py \
+    --model_name full_baseline_${GPUS}_gpus \
+    --prior causal \
+    --gpus $GPUS \
+    --epochs $EPOCHS \
+    --num_steps $NUM_STEPS \
+    --batch_size 1 \
+    --max_num_classes 100
 
 configs=(
   configs/geo_baseline.json
@@ -22,11 +24,13 @@ configs=(
 
 for config_file in "${configs[@]}"; do
   echo "$config_file"
+  CONF_NAME=$(basename "$config_file" .json)
+  RUN_NAME="${CONF_NAME}_${GPUS}_gpus"
   uv run python pretrain_and_node_classification.py \
-    --model_name $config_file \
+    --model_name $RUN_NAME \
     --prior geo \
-    --gpus 1 \
-    --epochs 30 \
+    --gpus $GPUS \
+    --epochs $EPOCHS \
     --num_steps $NUM_STEPS \
     --batch_size 1 \
     --max_num_classes 100 \
