@@ -34,16 +34,15 @@
         "value": 1024
     },
     "n_classes": {
-        "n_classes": {
         "distribution": "pmf",
         "lower_bound": 2,
         "bins": [
             [
                 2,
-                9
+                5
             ],
             [
-                10,
+                6,
                 69
             ],
             [
