@@ -1,0 +1,93 @@
+{
+    "n_layers": {
+        "distribution": "meta_gamma",
+        "max_alpha": 2,
+        "max_scale": 3,
+        "lower_bound": 2,
+        "round": true
+    },
+    "hidden": {
+        "distribution": "meta_gamma",
+        "max_alpha": 3,
+        "max_scale": 100,
+        "lower_bound": 4,
+        "round": true
+    },
+    "n_geo": {
+        "distribution": "meta_gamma",
+        "max_alpha": 3,
+        "max_scale": 7,
+        "lower_bound": 2,
+        "round": true
+    },
+    "drop_rate": {
+        "distribution": "meta_beta",
+        "scale": 0.6,
+        "min": 0.1,
+        "max": 5.0
+    },
+    "n_features": {
+        "distribution": "uniform_int",
+        "min": 1,
+        "max": 100
+    },
+    "n_nodes": {
+        "distribution": "constant",
+        "value": 1024
+    },
+    "n_classes": {
+        "distribution": "pmf",
+        "lower_bound": 2,
+        "bins": [
+            [
+                2,
+                29
+            ],
+            [
+                30,
+                69
+            ],
+            [
+                70,
+                100
+            ]
+        ],
+        "weights": [
+            1,
+            2,
+            3
+        ]
+    },
+    "similarity": [
+        "cosine",
+        "bilinear",
+        "mlp"
+    ],
+    "frame_choices": [
+        "activation",
+        "none",
+        "center",
+        "minmax",
+        "zscore",
+        "rank"
+    ],
+    "symmetric_activations": [
+        "identity",
+        "tanh",
+        "sin",
+        "erf",
+        "asinh"
+    ],
+    "slider_ranges": {
+        "n_nodes": [
+            16,
+            256,
+            8
+        ],
+        "sim_out_dim": [
+            1,
+            32,
+            1
+        ]
+    }
+}
