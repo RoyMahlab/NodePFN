@@ -135,6 +135,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             ))
             wandb_run = wandb.init(project=wandb_project, entity=wandb_entity,
                                    name=wandb_run_name, config=run_config)
+            geo_config_path = extra_prior_kwargs_dict.get('config_path', None)
+            if geo_config_path is not None:
+                wandb.save(geo_config_path)
 
     def train_epoch(epoch):
         model.train()  # Turn on the train mode
