@@ -1,5 +1,6 @@
 import argparse
 import random
+from loguru import logger
 import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, average_precision_score, roc_auc_score
@@ -89,7 +90,8 @@ def run_experiments(args):
     fit_times = []
 
     for run in range(args.runs):
-        print(f"\n================ Run {run+1}/{args.runs} ================")
+        run_time_start = time.time()
+        logger.info(f"Starting run {run + 1}/{args.runs}")
         args.seed = run
         fix_seed(args.seed)
         split_idx = split_idx_lst[run] if run < len(split_idx_lst) else split_idx_lst[0]
@@ -154,10 +156,10 @@ def run_experiments(args):
         test_mask = torch.isin(query_idx, test_idx)
 
         edge_index_run = update_edge_index(edge_index, train_idx, query_idx, num_nodes=n)
-        print(f"Train set: {X_train.shape[0]} samples")
-        print(f"Query set (valid + test): {X_query.shape[0]} samples")
-        print(f"  - Valid: {len(valid_idx)} samples")
-        print(f"  - Test: {len(test_idx)} samples")
+        logger.info(f"Train set: {X_train.shape[0]} samples")
+        logger.info(f"Query set (valid + test): {X_query.shape[0]} samples")
+        logger.info(f"  - Valid: {len(valid_idx)} samples")
+        logger.info(f"  - Test: {len(test_idx)} samples")
 
         start_time = time.time()
         base_model_path = args.base_model_path
@@ -227,7 +229,7 @@ def run_experiments(args):
         test_roc_aucs.append(roc_auc_test)
         fit_times.append(fit_time)
 
-        print(f"Run {run+1}: val acc={accuracy_valid:.4f}, test acc={accuracy_test:.4f}")
+        logger.info(f"Run {run+1}: val acc={accuracy_valid:.4f}, test acc={accuracy_test:.4f}, run_time={time.time() - run_time_start:.2f} sec, fit_time={fit_time:.2f} sec")
 
     print("\n================ Summary ================")
     print(f"Validation Accuracy: {np.mean(valid_accuracies)*100:.2f} ± {np.std(valid_accuracies)*100:.2f}")
@@ -270,6 +272,7 @@ def run_experiments(args):
             'cpu': args.cpu,
         },
     }
+    logger.info(f"Results summary: {results}")
     return results
 
 if __name__ == "__main__":

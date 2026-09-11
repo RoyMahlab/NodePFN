@@ -557,7 +557,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position, edge_index,
                 autocast_kwargs = {'enabled': fp16_inference}
                 if amp_dtype is not None:
                     autocast_kwargs['dtype'] = amp_dtype
-                with torch.cuda.amp.autocast(**autocast_kwargs):
+                with torch.amp.autocast('cuda', **autocast_kwargs):
                     output_batch = checkpoint(predict, batch_input, batch_label, style_, softmax_temperature_, True, use_reentrant=False)
         outputs += [output_batch]
     #print('MODEL INFERENCE TIME ('+str(batch_input.device)+' vs '+device+', '+str(fp16_inference)+')', str(time.time()-start))
