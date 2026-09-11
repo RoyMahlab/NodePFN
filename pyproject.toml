@@ -18,16 +18,16 @@ dependencies = [
     "Cython==3.2.4",
     "ConfigSpace==0.4.21",
     # ==================================================================
-    # PyTorch (cu121) — routed via torch-index below
+    # PyTorch (cu130) — routed via torch-index below
     # ==================================================================
-    "torch==2.2.0",
-    "torchvision==0.17.0",
-    "triton==2.2.0",
+    "torch==2.9.1",
+    "torchvision==0.24.1",
+    "triton==3.5.1",
     # ==================================================================
     # PyTorch Geometric stack — routed via pyg-index below
     # ==================================================================
-    "torch-geometric==2.7.0",
-    "pyg-lib==0.4.0",
+    "torch-geometric==2.8.0.post1",
+    "pyg-lib==0.7.0",
     "torch_scatter==2.1.2",
     "torch_sparse==0.6.18",
     "torch_cluster==1.6.3",
@@ -97,12 +97,12 @@ environments = [
 
 [[tool.uv.index]]
 name = "torch-index"
-url = "https://download.pytorch.org/whl/cu121"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [[tool.uv.index]]
 name = "pyg-index"
-url = "https://data.pyg.org/whl/torch-2.2.0+cu121.html"
+url = "https://data.pyg.org/whl/torch-2.9.1+cu130.html"
 format = "flat"
 explicit = true
 
