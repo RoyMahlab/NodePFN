@@ -269,20 +269,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                       formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--scripts', nargs='+', default=[
-        os.path.join(REPO_ROOT, 'run_extra_baseline.sh'),
+        # os.path.join(REPO_ROOT, 'run_extra_baseline.sh'),
         # os.path.join(REPO_ROOT, 'run_bluesky_baseline.sh'),
-        # os.path.join(REPO_ROOT, 'run_graphland_baseline.sh'),
+        os.path.join(REPO_ROOT, 'run_graphland_baseline.sh'),
     ])
     parser.add_argument('--datasets', nargs='*', default=None,
                         help='only run these datasets (default: all found in --scripts)')
 
     parser.add_argument('--checkpoints', nargs='+', default=[
-        # 'models_ckpts/full_baseline_8_gpus',
-        # 'models_ckpts/geo_baseline_less_features_less_layers_8_gpus_uniform_geo_prior',
         'models_ckpts/full_baseline_8_gpus',
+        'models_ckpts/geo_baseline_less_features_less_layers_8_gpus_uniform_geo_prior',
+        'models_ckpts/geo_baseline_8_gpus_uniform_geo_prior',
+        'models_ckpts/geo_baseline_less_features_8_gpus',
+        'models_ckpts/geo_baseline_only_zscore_norm_8_gpus'
+
     ])
-    parser.add_argument('--checkpoint_labels', nargs='+', default=['full', 'geo'],
-                        help='short labels for --checkpoints, same order/length')
+    parser.add_argument('--checkpoint_labels', nargs='+', default=[
+                    'full',
+                    'geo',
+                    'geo_baseline_8_gpus_uniform_geo_prior', 
+                    'geo_baseline_less_features_8_gpus', 
+                    'geo_baseline_only_zscore_norm_8_gpus'
+                ],
+        help='short labels for --checkpoints, same order/length')
 
     parser.add_argument('--dim_reduction_values', nargs='+', default=['none', 'tsvd'], choices=['none', 'tsvd'])
     parser.add_argument('--n_components_values', nargs='+', type=int, default=[8, 16, 32],

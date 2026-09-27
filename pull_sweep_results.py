@@ -192,6 +192,13 @@ def main():
                                       formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--entity', default=None)
     parser.add_argument('--project', default='NodePFN-sweep-short')
+    parser.add_argument('--checkpoint_labels', nargs='+', default=[
+        'full',
+        'geo',
+        'geo_baseline_8_gpus_uniform_geo_prior', 
+        'geo_baseline_less_features_8_gpus', 
+        'geo_baseline_only_zscore_norm_8_gpus'
+    ])
     parser.add_argument('--baseline_label', default='full')
     parser.add_argument('--geo_label', default='geo')
     parser.add_argument('--out_dir', default=os.path.join(REPO_ROOT, 'sweep_results'))
